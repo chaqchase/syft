@@ -1,0 +1,22 @@
+[package]
+name = "syft-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "syft"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+syft-core = { path = "../syft-core" }
+syft-types = { path = "../syft-types" }
+
+[dev-dependencies]
+tempfile.workspace = true
+
