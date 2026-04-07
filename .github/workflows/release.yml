@@ -170,43 +170,54 @@ jobs:
           Copy-Item "README.md" "dist\$assetDir\README.md"
           Compress-Archive -Path "dist\$assetDir\*" -DestinationPath "dist\$assetDir.zip" -Force
 
-      - name: Upload packaged binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: binary-${{ matrix.target }}
-          path: dist/*
+      - name: Upload packaged binary to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          shopt -s nullglob
+          assets=(dist/*.tar.gz dist/*.zip)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "no packaged assets found" >&2
+            exit 1
+          fi
+          gh release upload "${{ needs.prepare.outputs.tag }}" "${assets[@]}" --clobber
 
-  upload-assets:
-    name: Upload Release Assets
+  finalize-release:
+    name: Finalize Release Assets
     needs:
       - prepare
       - build-binaries
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
+      - name: Download release archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist
+          gh release download "${{ needs.prepare.outputs.tag }}" \
+            --pattern 'syft-*.tar.gz' \
+            --pattern 'syft-*.zip' \
+            --dir dist
 
       - name: Generate checksums
         run: |
           cd dist
           shasum -a 256 *.tar.gz *.zip > SHA256SUMS.txt
 
-      - name: Upload assets with clobber
+      - name: Upload checksums with clobber
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ needs.prepare.outputs.tag }}" dist/*.tar.gz dist/*.zip dist/SHA256SUMS.txt --clobber
+          gh release upload "${{ needs.prepare.outputs.tag }}" dist/SHA256SUMS.txt --clobber
 
   publish-crates:
     name: Publish Crates.io Packages
     if: ${{ inputs.publish_crates }}
     needs:
       - prepare
-      - upload-assets
+      - finalize-release
     runs-on: ubuntu-latest
     environment: crates-io
     env:
