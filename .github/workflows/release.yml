@@ -89,6 +89,38 @@ jobs:
             echo "retag_required=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Check crates.io publish state
+        id: crates-state
+        run: |
+          version="${{ steps.plan.outputs.version }}"
+          published_any=false
+
+          for package in \
+            syft-types \
+            syft-store \
+            syft-objects \
+            syft-git \
+            syft-semantic \
+            syft-validate \
+            syft-core \
+            syft-cli
+          do
+            if curl -fsSI "https://crates.io/api/v1/crates/${package}/${version}/download" >/dev/null 2>&1; then
+              echo "${package}@${version} is already published"
+              published_any=true
+            fi
+          done
+
+          echo "published_any=${published_any}" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse retag when crates are already published
+        if: steps.tag-state.outputs.retag_required == 'true' && steps.crates-state.outputs.published_any == 'true'
+        run: |
+          echo "Some crates for version ${{ steps.plan.outputs.version }} are already published on crates.io." >&2
+          echo "Reusing that version on a different commit would leave the release inconsistent." >&2
+          echo "Choose a new semantic version and run the workflow again." >&2
+          exit 1
+
       - name: Run tests before tagging
         if: steps.plan.outputs.existing_tag != 'true'
         run: cargo test --workspace --locked
