@@ -4,8 +4,7 @@ use std::process::Command;
 
 use anyhow::{Context, Result, anyhow, bail};
 use syft_objects::{
-    capture_paths, capture_virtual_entries, effective_capture_excludes, filter_capture_paths,
-    materialize_snapshot,
+    capture_paths, capture_virtual_entries, filter_capture_paths, materialize_snapshot,
 };
 use syft_store::ObjectStore;
 use syft_types::{
@@ -26,16 +25,28 @@ pub fn current_commit(repo_path: &Path) -> Result<String> {
 }
 
 pub fn worktree_file_paths(repo_path: &Path, exclude_paths: &[String]) -> Result<Vec<PathBuf>> {
-    let bytes = run_git_bytes(
-        repo_path,
-        &[
-            "ls-files",
-            "-z",
-            "--cached",
-            "--others",
-            "--exclude-standard",
-        ],
-    )?;
+    let mut command = Command::new("git");
+    command
+        .arg("ls-files")
+        .arg("-z")
+        .arg("--cached")
+        .arg("--others")
+        .arg("--exclude-standard")
+        .current_dir(repo_path);
+    let syftignore_path = repo_path.join(".syftignore");
+    if syftignore_path.exists() {
+        command.arg(format!("--exclude-from={}", syftignore_path.display()));
+    }
+    let output = command
+        .output()
+        .context("failed to run git ls-files for worktree capture")?;
+    if !output.status.success() {
+        return Err(anyhow!(
+            "git ls-files failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    let bytes = output.stdout;
     let paths = split_null_terminated(&bytes)
         .into_iter()
         .map(PathBuf::from)
@@ -74,8 +85,7 @@ pub fn capture_worktree_snapshot(
     object_store: &dyn ObjectStore,
     parent_snapshot_ids: Vec<String>,
 ) -> Result<(Snapshot, SnapshotIndex)> {
-    let exclude_paths = effective_capture_excludes(&repo_config.capture_excludes);
-    let paths = worktree_file_paths(repo_path, &exclude_paths)?;
+    let paths = worktree_file_paths(repo_path, &repo_config.capture_excludes)?;
     let (root_tree_hash, index) = capture_paths(repo_path, &paths, object_store)?;
     let snapshot = Snapshot {
         id: new_entity_id(),
