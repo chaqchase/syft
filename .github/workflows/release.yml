@@ -311,6 +311,11 @@ jobs:
             echo "$wait_seconds"
           }
 
+          publish_succeeded_elsewhere() {
+            local log_file="$1"
+            grep -q "already exists on crates.io index" "$log_file"
+          }
+
           publish() {
             local package="$1"
             local attempt
@@ -333,6 +338,11 @@ jobs:
 
               cat "$log_file"
               echo "publish attempt ${attempt} for ${package} failed"
+
+              if publish_succeeded_elsewhere "$log_file"; then
+                echo "$package $VERSION is already published, continuing"
+                return 0
+              fi
 
               if is_published "$package"; then
                 echo "$package $VERSION showed up after retry delay, continuing"
