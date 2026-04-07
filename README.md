@@ -195,6 +195,34 @@ For AI-heavy change exploration, I think it is heading in a better direction bec
 
 That is still being proven. The current version is honest bootstrap software.
 
+## Install
+
+If you want the binary from GitHub releases, use the install scripts.
+
+On macOS or Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chaqchase/syft/main/scripts/install.sh | sh
+```
+
+For a specific version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chaqchase/syft/main/scripts/install.sh | sh -s -- v0.1.0
+```
+
+On Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/chaqchase/syft/main/scripts/install.ps1 | iex
+```
+
+For a specific version:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/chaqchase/syft/main/scripts/install.ps1))) "v0.1.0"
+```
+
 ## Read the rest
 
 The README stays high level on purpose.

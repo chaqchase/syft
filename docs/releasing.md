@@ -100,9 +100,23 @@ Examples:
 ./scripts/install.sh v0.1.0
 ```
 
+If you want to install straight from the repo without cloning it first:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chaqchase/syft/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/chaqchase/syft/main/scripts/install.sh | sh -s -- v0.1.0
+```
+
 ```powershell
 ./scripts/install.ps1
 ./scripts/install.ps1 v0.1.0
+```
+
+And from PowerShell without cloning the repo:
+
+```powershell
+irm https://raw.githubusercontent.com/chaqchase/syft/main/scripts/install.ps1 | iex
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/chaqchase/syft/main/scripts/install.ps1))) "v0.1.0"
 ```
 
 By default the scripts install into a user-local bin directory.
