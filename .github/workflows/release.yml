@@ -121,6 +121,10 @@ jobs:
           echo "Choose a new semantic version and run the workflow again." >&2
           exit 1
 
+      - name: Refresh lockfile for release version
+        if: steps.plan.outputs.existing_tag != 'true'
+        run: cargo generate-lockfile
+
       - name: Run tests before tagging
         if: steps.plan.outputs.existing_tag != 'true'
         run: cargo test --workspace --locked
@@ -128,7 +132,7 @@ jobs:
       - name: Commit release files
         if: steps.plan.outputs.existing_tag != 'true'
         run: |
-          git add Cargo.toml CHANGELOG.md
+          git add Cargo.toml Cargo.lock CHANGELOG.md
           git commit -m "chore(release): ${{ steps.plan.outputs.tag }}"
 
       - name: Create tag
