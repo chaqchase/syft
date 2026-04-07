@@ -36,11 +36,9 @@ Some of those directories are mostly placeholders right now.
 
 This is the repo config file.
 
-It stores the repo ID, name, default lineage, object store mode, metadata mode, enabled semantic languages, whether the Git bridge is on, and any extra snapshot-capture exclusions for this repo.
+It stores the repo ID, name, default lineage, object store mode, metadata mode, enabled semantic languages, and whether the Git bridge is on.
 
 It is small and human-readable on purpose.
-
-`capture_excludes` is for repo-specific extra rules. The built-in safe defaults are always applied separately.
 
 ## SQLite metadata
 
@@ -112,11 +110,17 @@ Worktree snapshots always exclude a small built-in set:
 
 That happens even if the repo forgot to ignore those paths in Git.
 
-You can add extra repo-local exclusions through `capture_excludes` in `.syft/repo.toml`.
+By default, `syft` also respects `.gitignore` for worktree capture.
 
-Those values are repo-root-relative path prefixes.
+If you want `syft`-specific ignore rules, you can add an optional `.syftignore` file at the repo root.
 
-Examples:
+`syft` will read that file in addition to `.gitignore` during worktree capture.
+
+When you initialize with `syft init --sync-gitignore`, it seeds `.syftignore` from the current `.gitignore`.
+
+For validation cleanup, `syft` uses the built-in safe defaults and any simple path-prefix rules it can read from `.gitignore` and `.syftignore`.
+
+Typical examples:
 
 - `dist`
 - `.cache/build`

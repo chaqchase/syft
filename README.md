@@ -86,14 +86,6 @@ It also has the read-side commands you need to inspect the state of the repo:
 - `task list`, `show`, `current`, `set-current`, `changes`
 - `change list`, `show`, `latest`, `diff`, `validate`, `promote`
 
-Worktree capture now also skips the obvious junk by default:
-
-- `.git`
-- `.syft`
-- `target`
-
-That change came out of real smoke testing. Without it, snapshots got flooded by build output and validation could be fooled by stale artifacts.
-
 ## Design choices that matter
 
 ### Git stays underneath for now

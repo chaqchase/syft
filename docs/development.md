@@ -127,7 +127,9 @@ Live worktree snapshots always skip:
 - `.syft`
 - `target`
 
-Extra repo-specific exclusions come from `capture_excludes` in `.syft/repo.toml`.
+After that, capture follows `.gitignore` by default.
+
+If a repo needs `syft`-specific rules, it can add an optional `.syftignore`.
 
 ### The semantic model avoids a giant symbol-kind enum
 

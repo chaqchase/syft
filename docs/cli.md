@@ -37,6 +37,14 @@ It creates:
 
 It also sets up `.git/info/exclude` so `.syft/` stays out of Git by default.
 
+If you want a dedicated `syft` ignore file, you can run:
+
+```bash
+syft init --sync-gitignore
+```
+
+That seeds `.syftignore` from the current `.gitignore`.
+
 ## `syft repo import-git`
 
 Imports a Git commit into a `syft` snapshot.
@@ -65,7 +73,9 @@ It also applies built-in safe exclusions while capturing:
 - `.syft`
 - `target`
 
-Extra repo-specific exclusions can be added through `capture_excludes` in `.syft/repo.toml`.
+By default, worktree capture respects `.gitignore`.
+
+If `.syftignore` exists, `syft` reads that too.
 
 ### `syft snapshot list`
 

@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Metadata and object store abstractions for syft"
+readme = "../../README.md"
 
 [dependencies]
 anyhow.workspace = true
@@ -11,7 +15,7 @@ chrono.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-syft-types = { path = "../syft-types" }
+syft-types = { version = "0.1.0", path = "../syft-types" }
 walkdir.workspace = true
 
 [dev-dependencies]

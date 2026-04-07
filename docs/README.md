@@ -12,6 +12,7 @@ Start here:
 - [`storage.md`](/Users/mohamedachaq/rework/cronacl-saas/git-alrt/syft/docs/storage.md) for the `.syft/` directory, SQLite metadata, object storage, and core entities
 - [`cli.md`](/Users/mohamedachaq/rework/cronacl-saas/git-alrt/syft/docs/cli.md) for commands and the current user workflow
 - [`development.md`](/Users/mohamedachaq/rework/cronacl-saas/git-alrt/syft/docs/development.md) for local development, tests, and current constraints
+- [`releasing.md`](/Users/mohamedachaq/rework/cronacl-saas/git-alrt/syft/docs/releasing.md) for CI, crates.io publishing, release binaries, and install scripts
 
 All of this is based on the code that exists now.
 
