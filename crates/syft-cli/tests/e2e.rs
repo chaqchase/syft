@@ -361,6 +361,74 @@ fn missing_context_and_stale_current_task_fail_clearly() {
 }
 
 #[test]
+fn init_can_sync_gitignore_and_capture_uses_gitignore_by_default() {
+    let repo = setup_fixture_repo();
+    fs::write(repo.path().join(".gitignore"), "ignored-output/\n").unwrap();
+
+    syft_json(
+        repo.path(),
+        &["init", "--name", "fixture", "--sync-gitignore"],
+    );
+    let syftignore = fs::read_to_string(repo.path().join(".syftignore")).unwrap();
+    assert!(syftignore.contains("ignored-output/"));
+
+    let base_snapshot = syft_json(repo.path(), &["repo", "import-git", "--commit", "HEAD"]);
+    let task = syft_json(
+        repo.path(),
+        &["task", "create", "--title", "Honor gitignore by default"],
+    );
+    syft_json(
+        repo.path(),
+        &["task", "set-current", task["id"].as_str().unwrap()],
+    );
+
+    fs::create_dir_all(repo.path().join("ignored-output")).unwrap();
+    fs::write(
+        repo.path().join("ignored-output/generated.txt"),
+        "should stay out\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join("src/lib.rs"),
+        "pub fn greet() -> &'static str {\n    \"hello, syft\"\n}\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join("tests/smoke.rs"),
+        "use fixture::greet;\n\n#[test]\nfn smoke() {\n    assert_eq!(greet(), \"hello, syft\");\n}\n",
+    )
+    .unwrap();
+
+    let result_snapshot = syft_json(repo.path(), &["snapshot", "capture"]);
+    let change = syft_json(
+        repo.path(),
+        &[
+            "change",
+            "propose",
+            "--title",
+            "Respect ignore files",
+            "--intent",
+            "make sure ignored output stays out of snapshots",
+            "--base",
+            base_snapshot["id"].as_str().unwrap(),
+            "--result",
+            result_snapshot["id"].as_str().unwrap(),
+        ],
+    );
+
+    let diff = syft_json(
+        repo.path(),
+        &["change", "diff", change["id"].as_str().unwrap()],
+    );
+    assert!(diff["ops"].as_array().unwrap().iter().all(|op| {
+        !op["path"]
+            .as_str()
+            .unwrap()
+            .starts_with("ignored-output/")
+    }));
+}
+
+#[test]
 fn snapshot_capture_excludes_target_and_validation_rejects_source_only_failure() {
     let repo = setup_fixture_repo();
 

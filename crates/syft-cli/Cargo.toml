@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "CLI binary for syft, an AI-native version control experiment"
+readme = "../../README.md"
 
 [[bin]]
 name = "syft"
@@ -14,9 +18,8 @@ anyhow.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-syft-core = { path = "../syft-core" }
-syft-types = { path = "../syft-types" }
+syft-core = { version = "0.1.0", path = "../syft-core" }
+syft-types = { version = "0.1.0", path = "../syft-types" }
 
 [dev-dependencies]
 tempfile.workspace = true
-
