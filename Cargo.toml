@@ -34,3 +34,11 @@ tempfile = "3.23"
 toml = "0.9"
 ulid = { version = "1.2", features = ["serde"] }
 walkdir = "2.5"
+syft-cli = { version = "0.2.0", path = "crates/syft-cli" }
+syft-core = { version = "0.2.0", path = "crates/syft-core" }
+syft-git = { version = "0.2.0", path = "crates/syft-git" }
+syft-objects = { version = "0.2.0", path = "crates/syft-objects" }
+syft-semantic = { version = "0.2.0", path = "crates/syft-semantic" }
+syft-store = { version = "0.2.0", path = "crates/syft-store" }
+syft-types = { version = "0.2.0", path = "crates/syft-types" }
+syft-validate = { version = "0.2.0", path = "crates/syft-validate" }

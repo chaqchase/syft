@@ -1,67 +1,109 @@
 name: Release
 
 on:
-  release:
-    types:
-      - published
   workflow_dispatch:
     inputs:
-      tag:
-        description: Release tag to build and publish
+      version:
+        description: Explicit semantic version to release, for example 0.2.1
+        required: false
+        type: string
+      bump:
+        description: Version bump to use when version is empty
         required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      publish_crates:
+        description: Publish crates.io packages after the GitHub release is ready
+        required: true
+        default: true
+        type: boolean
+      notes:
+        description: Optional extra release note text to prepend to the changelog section
+        required: false
         type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event.inputs.version || github.run_id }}
   cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  verify-version:
-    name: Verify Tag Version
+  prepare:
+    name: Prepare Release
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}
-      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      existing_tag: ${{ steps.plan.outputs.existing_tag }}
 
     steps:
       - name: Check out
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+          fetch-depth: 0
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-      - name: Resolve release tag
-        id: release
+      - name: Set up git user
         run: |
-          if [ "${{ github.event_name }}" = "release" ]; then
-            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Plan release
+        id: plan
+        run: |
+          python3 scripts/release.py \
+            --version "${{ inputs.version }}" \
+            --bump "${{ inputs.bump }}" \
+            --notes "${{ inputs.notes }}" >> "$GITHUB_OUTPUT"
+
+      - name: Run tests before tagging
+        if: steps.plan.outputs.existing_tag != 'true'
+        run: cargo test --workspace --locked
+
+      - name: Commit release files
+        if: steps.plan.outputs.existing_tag != 'true'
+        run: |
+          git add Cargo.toml CHANGELOG.md
+          git commit -m "chore(release): ${{ steps.plan.outputs.tag }}"
+
+      - name: Create tag
+        if: steps.plan.outputs.existing_tag != 'true'
+        run: git tag "${{ steps.plan.outputs.tag }}"
+
+      - name: Push commit and tag
+        if: steps.plan.outputs.existing_tag != 'true'
+        run: |
+          git push origin HEAD
+          git push origin "${{ steps.plan.outputs.tag }}"
+
+      - name: Create release if missing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.plan.outputs.tag }}" >/dev/null 2>&1; then
+            echo "release already exists for ${{ steps.plan.outputs.tag }}"
           else
-            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Read crate version
-        id: version
-        run: |
-          TAG="${{ steps.release.outputs.tag }}"
-          VERSION=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; data=json.load(sys.stdin); print(next(pkg["version"] for pkg in data["packages"] if pkg["name"] == "syft-cli"))')
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          if [ "$TAG" != "v${VERSION}" ]; then
-            echo "Tag $TAG does not match workspace version v${VERSION}" >&2
-            exit 1
+            gh release create "${{ steps.plan.outputs.tag }}" \
+              --title "${{ steps.plan.outputs.tag }}" \
+              --notes-file ".release-notes.md"
           fi
 
   build-binaries:
     name: Build ${{ matrix.target }}
-    needs: verify-version
+    needs: prepare
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -69,26 +111,26 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            archive: tar.gz
             binary: syft
+            archive: tar.gz
           - os: macos-latest
             target: x86_64-apple-darwin
-            archive: tar.gz
             binary: syft
+            archive: tar.gz
           - os: macos-latest
             target: aarch64-apple-darwin
-            archive: tar.gz
             binary: syft
+            archive: tar.gz
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            archive: zip
             binary: syft.exe
+            archive: zip
 
     steps:
-      - name: Check out
+      - name: Check out release tag
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.verify-version.outputs.tag }}
+          ref: ${{ needs.prepare.outputs.tag }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -98,13 +140,13 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Build release binary
+      - name: Build binary
         run: cargo build --release --locked -p syft-cli --target ${{ matrix.target }}
 
-      - name: Package archive (unix)
+      - name: Package archive on unix
         if: runner.os != 'Windows'
         env:
-          VERSION: ${{ needs.verify-version.outputs.version }}
+          VERSION: ${{ needs.prepare.outputs.version }}
           TARGET: ${{ matrix.target }}
           BINARY: ${{ matrix.binary }}
         run: |
@@ -114,11 +156,11 @@ jobs:
           cp README.md "dist/${ASSET_DIR}/README.md"
           tar -C dist -czf "dist/${ASSET_DIR}.tar.gz" "${ASSET_DIR}"
 
-      - name: Package archive (windows)
+      - name: Package archive on windows
         if: runner.os == 'Windows'
         shell: pwsh
         env:
-          VERSION: ${{ needs.verify-version.outputs.version }}
+          VERSION: ${{ needs.prepare.outputs.version }}
           TARGET: ${{ matrix.target }}
           BINARY: ${{ matrix.binary }}
         run: |
@@ -134,10 +176,10 @@ jobs:
           name: binary-${{ matrix.target }}
           path: dist/*
 
-  upload-release-assets:
+  upload-assets:
     name: Upload Release Assets
     needs:
-      - verify-version
+      - prepare
       - build-binaries
     runs-on: ubuntu-latest
 
@@ -153,30 +195,29 @@ jobs:
           cd dist
           shasum -a 256 *.tar.gz *.zip > SHA256SUMS.txt
 
-      - name: Upload assets to release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.verify-version.outputs.tag }}
-          files: |
-            dist/*.tar.gz
-            dist/*.zip
-            dist/SHA256SUMS.txt
+      - name: Upload assets with clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ needs.prepare.outputs.tag }}" dist/*.tar.gz dist/*.zip dist/SHA256SUMS.txt --clobber
 
   publish-crates:
     name: Publish Crates.io Packages
+    if: ${{ inputs.publish_crates }}
     needs:
-      - verify-version
-      - upload-release-assets
+      - prepare
+      - upload-assets
     runs-on: ubuntu-latest
     environment: crates-io
     env:
       CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      VERSION: ${{ needs.prepare.outputs.version }}
 
     steps:
-      - name: Check out
+      - name: Check out release tag
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.verify-version.outputs.tag }}
+          ref: ${{ needs.prepare.outputs.tag }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -184,28 +225,45 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Skip publish when token is missing
-        if: env.CARGO_REGISTRY_TOKEN == ''
-        run: echo "CARGO_REGISTRY_TOKEN is not set, skipping crates.io publish"
+      - name: Require crates.io token
+        run: |
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "CARGO_REGISTRY_TOKEN is required when publish_crates is true" >&2
+            exit 1
+          fi
 
-      - name: Publish workspace crates
-        if: env.CARGO_REGISTRY_TOKEN != ''
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ env.CARGO_REGISTRY_TOKEN }}
+      - name: Publish crates in order with retries
         run: |
           set -euo pipefail
+
+          is_published() {
+            curl -fsSI "https://crates.io/api/v1/crates/$1/$VERSION/download" >/dev/null 2>&1
+          }
+
           publish() {
             local package="$1"
             local attempt
+
+            if is_published "$package"; then
+              echo "$package $VERSION is already published, skipping"
+              return 0
+            fi
+
             for attempt in 1 2 3 4 5; do
               if cargo publish --locked -p "$package" --token "$CARGO_REGISTRY_TOKEN"; then
+                echo "published $package $VERSION"
                 sleep 30
                 return 0
               fi
-              echo "publish attempt ${attempt} for ${package} failed, retrying after index delay"
+              echo "publish attempt ${attempt} for ${package} failed"
               sleep 30
+              if is_published "$package"; then
+                echo "$package $VERSION showed up after retry delay, continuing"
+                return 0
+              fi
             done
-            echo "failed to publish ${package} after multiple attempts" >&2
+
+            echo "failed to publish $package after multiple attempts" >&2
             return 1
           }
 

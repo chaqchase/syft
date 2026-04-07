@@ -1,16 +1,17 @@
 # Releasing
 
-There are two release paths now.
+The release flow is manual, semver-based, and meant to be easy to rerun.
 
 - crates.io publishing for the workspace crates
 - GitHub releases for the `syft` binary
-- semantic versioning driven by conventional commits
+- semantic versioning driven by an explicit version or a patch/minor/major bump choice
 
 ```mermaid
 flowchart LR
-    commits["conventional commits on main"] --> semrel["semantic-release"]
-    semrel --> tag["version bump + vX.Y.Z tag"]
-    semrel --> ghrel["GitHub release"]
+    dispatch["manual release workflow"] --> version["pick version or bump level"]
+    version --> sync["sync workspace crate versions"]
+    sync --> tag["commit + vX.Y.Z tag"]
+    tag --> ghrel["GitHub release"]
     ghrel --> binaries["build Linux / macOS / Windows binaries"]
     ghrel --> crates["publish crates.io packages"]
     binaries --> install["install scripts download release assets"]
@@ -19,22 +20,24 @@ flowchart LR
 The GitHub Actions setup lives in:
 
 - `.github/workflows/ci.yml`
-- `.github/workflows/semantic-release.yml`
 - `.github/workflows/release.yml`
 
 `ci.yml` runs the test suite on Linux, macOS, and Windows. It also checks the workspace metadata and packages `syft-types`, which is the only crate that can be fully package-checked before the rest of the workspace exists on crates.io.
 
 The dependent crates get their real publish validation in the release job itself, in publish order, with retries for crates.io index lag.
 
-`semantic-release.yml` runs on `main`.
+`release.yml` is the only release workflow now.
 
-It reads conventional commits, bumps `workspace.package.version` in `Cargo.toml`, updates `CHANGELOG.md`, creates a tag like `v0.1.0`, and publishes a GitHub release.
+It runs manually with `workflow_dispatch`.
 
-`release.yml` runs when a GitHub release is published, which is what semantic release creates.
+You can either:
 
-It does four things:
+- pass an explicit version like `0.2.1`
+- or let the workflow compute the next version from a `patch`, `minor`, or `major` bump input
 
-1. Checks that the release tag matches the workspace version.
+It does five things:
+
+1. Syncs the workspace version and all internal crate dependency versions from one place.
 2. Builds release binaries for:
    - Linux x86_64
    - macOS x86_64
@@ -42,39 +45,51 @@ It does four things:
    - Windows x86_64
 3. Publishes a GitHub release with archives and a `SHA256SUMS.txt` file.
 4. Publishes the crates to crates.io in dependency order.
+5. Skips already-published crates so reruns do not blow up halfway through.
 
 ```mermaid
 sequenceDiagram
     participant Dev as maintainer
-    participant Main as main branch
-    participant SR as semantic-release
-    participant GH as GitHub Release workflow
+    participant WF as release workflow
+    participant Git as git repo
+    participant GH as GitHub release
     participant CR as crates.io
 
-    Dev->>Main: merge conventional commits
-    Main->>SR: semantic-release workflow runs
-    SR->>SR: bump version and changelog
-    SR->>GH: create tag and GitHub release
-    GH->>GH: build platform binaries
-    GH->>GH: upload archives and checksums
-    GH->>CR: publish crates in order
+    Dev->>WF: run workflow_dispatch
+    WF->>Git: sync versions and changelog
+    WF->>Git: commit and tag if tag does not exist yet
+    WF->>GH: create or reuse release
+    WF->>GH: build and upload archives
+    WF->>CR: publish crates in order
+    WF->>CR: skip crates that are already published
 ```
 
-## Commit format
+## Retry behavior
 
-This setup expects conventional commits.
+This is the important part.
 
-Examples:
+If a release fails halfway through, rerun the workflow with the same explicit version.
 
-- `feat: add snapshot diff summaries`
-- `fix: stop validation from reusing stale target output`
-- `refactor: split core services into query and workflow modules`
+The workflow will:
 
-Version bumps work like this:
+- reuse the existing tag if it already exists
+- reuse the GitHub release if it already exists
+- upload release assets with clobber
+- skip crates that are already published on crates.io
 
-- `feat:` gives a minor bump
-- `fix:`, `perf:`, and `refactor:` give a patch bump
-- breaking changes should use standard conventional commit markers so the release tool can cut a major version when the project gets there
+That makes retries much less fragile than the old flow.
+
+## Versioning
+
+The project still follows semantic versioning.
+
+Use:
+
+- `patch` for fixes and small internal improvements
+- `minor` for backward-compatible features
+- `major` for breaking changes
+
+If you need full control, pass the exact version in the workflow input instead of using a bump level.
 
 ## Required secret
 
@@ -83,6 +98,14 @@ The crates publish job needs this secret:
 - `CARGO_REGISTRY_TOKEN`
 
 If that secret is missing, the binary release still runs. The crates.io publish step logs that it skipped publishing.
+
+## What changed in the release setup
+
+The old release setup was too easy to desync.
+
+The main failure was that the workspace version changed while internal crate dependency versions stayed behind. That broke `cargo metadata` and release jobs at the worst possible time.
+
+The current setup fixes that by using one root version source and syncing the internal crate versions before tagging.
 
 ## Install from releases
 

@@ -18,8 +18,8 @@ anyhow.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-syft-core = { version = "0.1.0", path = "../syft-core" }
-syft-types = { version = "0.1.0", path = "../syft-types" }
+syft-core.workspace = true
+syft-types.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

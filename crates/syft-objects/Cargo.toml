@@ -13,8 +13,8 @@ readme = "../../README.md"
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-syft-store = { version = "0.1.0", path = "../syft-store" }
-syft-types = { version = "0.1.0", path = "../syft-types" }
+syft-store.workspace = true
+syft-types.workspace = true
 walkdir.workspace = true
 
 [dev-dependencies]

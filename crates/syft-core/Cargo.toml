@@ -14,12 +14,12 @@ anyhow.workspace = true
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-syft-git = { version = "0.1.0", path = "../syft-git" }
-syft-objects = { version = "0.1.0", path = "../syft-objects" }
-syft-semantic = { version = "0.1.0", path = "../syft-semantic" }
-syft-store = { version = "0.1.0", path = "../syft-store" }
-syft-types = { version = "0.1.0", path = "../syft-types" }
-syft-validate = { version = "0.1.0", path = "../syft-validate" }
+syft-git.workspace = true
+syft-objects.workspace = true
+syft-semantic.workspace = true
+syft-store.workspace = true
+syft-types.workspace = true
+syft-validate.workspace = true
 toml.workspace = true
 
 [dev-dependencies]

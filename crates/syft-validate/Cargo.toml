@@ -14,8 +14,8 @@ anyhow.workspace = true
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-syft-git = { version = "0.1.0", path = "../syft-git" }
-syft-objects = { version = "0.1.0", path = "../syft-objects" }
-syft-store = { version = "0.1.0", path = "../syft-store" }
-syft-types = { version = "0.1.0", path = "../syft-types" }
+syft-git.workspace = true
+syft-objects.workspace = true
+syft-store.workspace = true
+syft-types.workspace = true
 tempfile.workspace = true
