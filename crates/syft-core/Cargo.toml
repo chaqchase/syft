@@ -4,18 +4,22 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Core application services for syft"
+readme = "../../README.md"
 
 [dependencies]
 anyhow.workspace = true
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-syft-git = { path = "../syft-git" }
-syft-objects = { path = "../syft-objects" }
-syft-semantic = { path = "../syft-semantic" }
-syft-store = { path = "../syft-store" }
-syft-types = { path = "../syft-types" }
-syft-validate = { path = "../syft-validate" }
+syft-git = { version = "0.1.0", path = "../syft-git" }
+syft-objects = { version = "0.1.0", path = "../syft-objects" }
+syft-semantic = { version = "0.1.0", path = "../syft-semantic" }
+syft-store = { version = "0.1.0", path = "../syft-store" }
+syft-types = { version = "0.1.0", path = "../syft-types" }
+syft-validate = { version = "0.1.0", path = "../syft-validate" }
 toml.workspace = true
 
 [dev-dependencies]
