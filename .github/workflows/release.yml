@@ -280,9 +280,42 @@ jobs:
             curl -fsSI "https://crates.io/api/v1/crates/$1/$VERSION/download" >/dev/null 2>&1
           }
 
+          retry_sleep_from_log() {
+            local log_file="$1"
+            local retry_after
+            local retry_epoch
+            local now_epoch
+            local wait_seconds
+
+            retry_after="$(
+              sed -n 's/.*Please try again after \(.* GMT\).*/\1/p' "$log_file" | tail -n 1
+            )"
+
+            if [ -z "$retry_after" ]; then
+              echo 90
+              return 0
+            fi
+
+            retry_epoch="$(date -u -d "$retry_after" +%s 2>/dev/null || true)"
+            if [ -z "$retry_epoch" ]; then
+              echo 90
+              return 0
+            fi
+
+            now_epoch="$(date -u +%s)"
+            wait_seconds=$((retry_epoch - now_epoch + 5))
+            if [ "$wait_seconds" -lt 15 ]; then
+              wait_seconds=15
+            fi
+
+            echo "$wait_seconds"
+          }
+
           publish() {
             local package="$1"
             local attempt
+            local log_file
+            local sleep_seconds
 
             if is_published "$package"; then
               echo "$package $VERSION is already published, skipping"
@@ -290,17 +323,25 @@ jobs:
             fi
 
             for attempt in 1 2 3 4 5; do
-              if cargo publish --locked -p "$package" --token "$CARGO_REGISTRY_TOKEN"; then
+              log_file="$(mktemp)"
+              if cargo publish --locked -p "$package" >"$log_file" 2>&1; then
+                cat "$log_file"
                 echo "published $package $VERSION"
-                sleep 30
+                sleep 90
                 return 0
               fi
+
+              cat "$log_file"
               echo "publish attempt ${attempt} for ${package} failed"
-              sleep 30
+
               if is_published "$package"; then
                 echo "$package $VERSION showed up after retry delay, continuing"
                 return 0
               fi
+
+              sleep_seconds="$(retry_sleep_from_log "$log_file")"
+              echo "sleeping ${sleep_seconds}s before retrying ${package}"
+              sleep "$sleep_seconds"
             done
 
             echo "failed to publish $package after multiple attempts" >&2

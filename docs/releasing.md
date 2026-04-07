@@ -76,6 +76,8 @@ The workflow will:
 - reuse the GitHub release if it already exists
 - upload release assets with clobber
 - skip crates that are already published on crates.io
+- wait longer between crate publishes
+- respect crates.io rate-limit retry times when crates.io tells it to back off
 
 That makes retries much less fragile than the old flow.
 
@@ -98,6 +100,10 @@ The crates publish job needs this secret:
 - `CARGO_REGISTRY_TOKEN`
 
 If that secret is missing, the binary release still runs. The crates.io publish step logs that it skipped publishing.
+
+The publish step now relies on the `CARGO_REGISTRY_TOKEN` environment variable directly instead of passing `--token` to `cargo publish`.
+
+That keeps it in line with current Cargo behavior and avoids the deprecation warning in release logs.
 
 ## What changed in the release setup
 
