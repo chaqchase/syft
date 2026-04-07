@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Rust-first semantic indexing and diffing for syft"
+readme = "../../README.md"
 
 [dependencies]
 anyhow.workspace = true
@@ -12,7 +16,7 @@ quote.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 syn.workspace = true
-syft-objects = { path = "../syft-objects" }
-syft-store = { path = "../syft-store" }
-syft-types = { path = "../syft-types" }
+syft-objects = { version = "0.1.0", path = "../syft-objects" }
+syft-store = { version = "0.1.0", path = "../syft-store" }
+syft-types = { version = "0.1.0", path = "../syft-types" }
 tempfile.workspace = true
