@@ -4,13 +4,17 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Content-addressed object storage and snapshot trees for syft"
+readme = "../../README.md"
 
 [dependencies]
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-syft-store = { path = "../syft-store" }
-syft-types = { path = "../syft-types" }
+syft-store = { version = "0.1.0", path = "../syft-store" }
+syft-types = { version = "0.1.0", path = "../syft-types" }
 walkdir.workspace = true
 
 [dev-dependencies]
