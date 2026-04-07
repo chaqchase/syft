@@ -44,6 +44,8 @@ jobs:
       version: ${{ steps.plan.outputs.version }}
       tag: ${{ steps.plan.outputs.tag }}
       existing_tag: ${{ steps.plan.outputs.existing_tag }}
+      head_sha: ${{ steps.tag-state.outputs.head_sha }}
+      retag_required: ${{ steps.tag-state.outputs.retag_required }}
 
     steps:
       - name: Check out
@@ -69,6 +71,23 @@ jobs:
             --bump "${{ inputs.bump }}" \
             --notes "${{ inputs.notes }}" >> "$GITHUB_OUTPUT"
 
+      - name: Check current tag target
+        id: tag-state
+        run: |
+          head_sha="$(git rev-parse HEAD)"
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+
+          if git rev-parse "${{ steps.plan.outputs.tag }}" >/dev/null 2>&1; then
+            tag_sha="$(git rev-list -n 1 "${{ steps.plan.outputs.tag }}")"
+            if [ "$tag_sha" = "$head_sha" ]; then
+              echo "retag_required=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "retag_required=true" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "retag_required=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run tests before tagging
         if: steps.plan.outputs.existing_tag != 'true'
         run: cargo test --workspace --locked
@@ -89,12 +108,21 @@ jobs:
           git push origin HEAD
           git push origin "${{ steps.plan.outputs.tag }}"
 
-      - name: Create release if missing
+      - name: Move existing tag to current commit
+        if: steps.plan.outputs.existing_tag == 'true' && steps.tag-state.outputs.retag_required == 'true'
+        run: |
+          git tag -f "${{ steps.plan.outputs.tag }}"
+          git push origin HEAD
+          git push origin "refs/tags/${{ steps.plan.outputs.tag }}" --force
+
+      - name: Create or update release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "${{ steps.plan.outputs.tag }}" >/dev/null 2>&1; then
-            echo "release already exists for ${{ steps.plan.outputs.tag }}"
+            gh release edit "${{ steps.plan.outputs.tag }}" \
+              --title "${{ steps.plan.outputs.tag }}" \
+              --target "${{ steps.tag-state.outputs.head_sha }}"
           else
             gh release create "${{ steps.plan.outputs.tag }}" \
               --title "${{ steps.plan.outputs.tag }}" \
