@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
@@ -21,13 +21,72 @@ struct TreeNode {
     dirs: BTreeMap<String, TreeNode>,
 }
 
+pub const DEFAULT_CAPTURE_EXCLUDES: &[&str] = &[".git", ".syft", "target"];
+
+pub fn effective_capture_excludes(extra_excludes: &[String]) -> Vec<String> {
+    let mut excludes = DEFAULT_CAPTURE_EXCLUDES
+        .iter()
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>();
+
+    for value in extra_excludes {
+        if let Some(rule) = normalize_exclude_rule(value)
+            && !excludes.contains(&rule)
+        {
+            excludes.push(rule);
+        }
+    }
+
+    excludes
+}
+
+pub fn path_is_excluded(relative_path: &Path, exclude_paths: &[String]) -> bool {
+    let normalized = normalize_path(relative_path);
+    if normalized.is_empty() {
+        return false;
+    }
+
+    exclude_paths.iter().any(|value| {
+        normalize_exclude_rule(value).is_some_and(|rule| {
+            normalized == rule || normalized.starts_with(&format!("{rule}/"))
+        })
+    })
+}
+
+pub fn filter_capture_paths(relative_paths: &[PathBuf], exclude_paths: &[String]) -> Vec<PathBuf> {
+    relative_paths
+        .iter()
+        .filter(|path| !path_is_excluded(path, exclude_paths))
+        .cloned()
+        .collect()
+}
+
+pub fn remove_excluded_paths(root: &Path, exclude_paths: &[String]) -> Result<()> {
+    for value in exclude_paths {
+        let Some(rule) = normalize_exclude_rule(value) else {
+            continue;
+        };
+        let path = root.join(rule);
+        if !path.exists() {
+            continue;
+        }
+        if path.is_dir() {
+            fs::remove_dir_all(&path)?;
+        } else {
+            fs::remove_file(&path)?;
+        }
+    }
+    Ok(())
+}
+
 pub fn capture_directory(
     root: &Path,
     object_store: &dyn ObjectStore,
-    exclude: &[&str],
+    exclude_paths: &[String],
 ) -> Result<(ObjectHash, SnapshotIndex)> {
     let mut paths = Vec::new();
-    collect_paths(root, root, exclude, &mut paths)?;
+    collect_paths(root, root, &mut paths)?;
+    let paths = filter_capture_paths(&paths, exclude_paths);
     capture_paths(root, &paths, object_store)
 }
 
@@ -144,7 +203,6 @@ pub fn diff_snapshot_indices(base: &SnapshotIndex, next: &SnapshotIndex) -> Vec<
 fn collect_paths(
     root: &Path,
     current: &Path,
-    exclude: &[&str],
     paths: &mut Vec<PathBuf>,
 ) -> Result<()> {
     for entry in fs::read_dir(current)? {
@@ -153,13 +211,8 @@ fn collect_paths(
         let relative = path
             .strip_prefix(root)
             .map_err(|_| anyhow!("failed to strip root prefix"))?;
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if exclude.iter().any(|value| *value == name) {
-            continue;
-        }
         if path.is_dir() {
-            collect_paths(root, &path, exclude, paths)?;
+            collect_paths(root, &path, paths)?;
         } else {
             paths.push(relative.to_path_buf());
         }
@@ -296,19 +349,103 @@ fn read_tree_object(hash: &str, object_store: &dyn ObjectStore) -> Result<TreeOb
 
 fn normalize_path(path: &Path) -> String {
     path.components()
-        .map(|component| component.as_os_str().to_string_lossy().to_string())
+        .filter_map(|component| match component {
+            Component::Normal(value) => Some(value.to_string_lossy().to_string()),
+            _ => None,
+        })
         .collect::<Vec<_>>()
         .join("/")
+}
+
+fn normalize_exclude_rule(value: &str) -> Option<String> {
+    let normalized = Path::new(value)
+        .components()
+        .filter_map(|component| match component {
+            Component::CurDir => None,
+            Component::Normal(value) => Some(value.to_string_lossy().to_string()),
+            _ => Some(String::new()),
+        })
+        .collect::<Vec<_>>();
+
+    if normalized.is_empty() || normalized.iter().any(|value| value.is_empty()) {
+        return None;
+    }
+
+    Some(normalized.join("/"))
 }
 
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::Path;
 
     use tempfile::tempdir;
 
     use super::*;
     use syft_store::FsObjectStore;
+
+    #[test]
+    fn path_matching_supports_defaults_and_relative_prefixes() {
+        let excludes = effective_capture_excludes(&[
+            ".cache/build".to_string(),
+            "dist/app.js".to_string(),
+        ]);
+
+        assert!(path_is_excluded(Path::new("target/debug/app"), &excludes));
+        assert!(path_is_excluded(Path::new(".syft/state/head"), &excludes));
+        assert!(path_is_excluded(Path::new(".cache/build/output.txt"), &excludes));
+        assert!(path_is_excluded(Path::new("dist/app.js"), &excludes));
+        assert!(!path_is_excluded(Path::new("targeted/debug/app"), &excludes));
+        assert!(!path_is_excluded(Path::new(".cache/build-output.txt"), &excludes));
+        assert!(!path_is_excluded(Path::new("dist/app.js.map"), &excludes));
+    }
+
+    #[test]
+    fn capture_directory_respects_excludes() {
+        let src = tempdir().unwrap();
+        let out = tempdir().unwrap();
+        fs::write(
+            src.path().join("Cargo.toml"),
+            "[package]\nname = \"fixture\"\n",
+        )
+        .unwrap();
+        fs::create_dir_all(src.path().join("src")).unwrap();
+        fs::write(src.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+        fs::create_dir_all(src.path().join("target/debug")).unwrap();
+        fs::write(src.path().join("target/debug/app"), "compiled").unwrap();
+
+        let store_dir = tempdir().unwrap();
+        let store = FsObjectStore::new(store_dir.path());
+        let (hash, index) =
+            capture_directory(src.path(), &store, &effective_capture_excludes(&[])).unwrap();
+        assert_eq!(index.files.len(), 2);
+        assert!(!index.files.contains_key("target/debug/app"));
+
+        materialize_snapshot(&hash, out.path(), &store).unwrap();
+        let restored = fs::read_to_string(out.path().join("src/main.rs")).unwrap();
+        assert_eq!(restored, "fn main() {}\n");
+        assert!(!out.path().join("target").exists());
+    }
+
+    #[test]
+    fn remove_excluded_paths_cleans_materialized_tree() {
+        let root = tempdir().unwrap();
+        fs::create_dir_all(root.path().join("target/debug")).unwrap();
+        fs::write(root.path().join("target/debug/app"), "compiled").unwrap();
+        fs::create_dir_all(root.path().join(".cache/build")).unwrap();
+        fs::write(root.path().join(".cache/build/output"), "cached").unwrap();
+        fs::write(root.path().join("src.rs"), "fn main() {}\n").unwrap();
+
+        remove_excluded_paths(
+            root.path(),
+            &effective_capture_excludes(&[".cache/build".to_string()]),
+        )
+        .unwrap();
+
+        assert!(!root.path().join("target").exists());
+        assert!(!root.path().join(".cache/build").exists());
+        assert!(root.path().join("src.rs").exists());
+    }
 
     #[test]
     fn capture_and_materialize_roundtrip() {
@@ -324,7 +461,7 @@ mod tests {
 
         let store_dir = tempdir().unwrap();
         let store = FsObjectStore::new(store_dir.path());
-        let (hash, index) = capture_directory(src.path(), &store, &[]).unwrap();
+        let (hash, index) = capture_directory(src.path(), &store, &Vec::<String>::new()).unwrap();
         assert_eq!(index.files.len(), 2);
 
         materialize_snapshot(&hash, out.path(), &store).unwrap();

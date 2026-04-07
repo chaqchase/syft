@@ -2,7 +2,9 @@
 
 `syft` is a Rust workspace with one binary crate and a handful of focused library crates.
 
-The shape is simple on purpose. The bootstrap version is trying to prove the model with as little machinery as possible.
+The shape is simple on purpose.
+
+This version is trying to prove the model with as little machinery as possible. That keeps it easier to read and easier to debug when the model changes.
 
 ## Workspace layout
 
@@ -55,6 +57,8 @@ This crate is where directory capture, tree serialization, materialization, and 
 
 It also computes file-level patch ops between snapshots.
 
+This is also where the built-in capture exclusions live now, so live worktree snapshots do not get polluted by obvious generated output like `target/`.
+
 ### `syft-git`
 
 Git bridge in both directions.
@@ -84,6 +88,8 @@ Today it supports:
 - `cargo clippy -- -D warnings`
 
 It stores both a summary artifact and the full stdout/stderr payload in object storage.
+
+It also clears excluded paths from the temp materialization and uses a temp-local `CARGO_TARGET_DIR`, which matters more than it first sounds. Without that, stale build output can leak into validation and give you bad signals.
 
 ### `syft-core`
 
@@ -138,5 +144,6 @@ The crate split mostly follows pressure points:
 - core orchestration that should stay readable
 - a CLI that is replaceable
 
-It is not the final architecture. It is a practical one for getting the first version working.
+It is not the final architecture.
 
+It is a practical one for getting the first version working and learning where the model actually helps.

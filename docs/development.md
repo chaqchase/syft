@@ -2,6 +2,8 @@
 
 This project is still small enough that the easiest way to understand it is to run it and read the crates directly.
 
+That is still the best advice here. The codebase is compact enough that reading the actual flow beats trying to memorize a big architecture doc.
+
 ## Build and test
 
 From the workspace root:
@@ -75,7 +77,7 @@ That means:
 - public API summaries are Rust-only
 - the `--symbol` history filter depends on Rust semantic data
 
-This is fine for the bootstrap but obviously not the long-term end state.
+This is fine for the bootstrap. It is also one of the clearest limits of the current system.
 
 ### Local-only execution
 
@@ -115,6 +117,18 @@ Validation summaries are stored in metadata, but the full stdout/stderr payload 
 
 That keeps the read model compact without throwing away evidence.
 
+Validation also runs with a temp-local `CARGO_TARGET_DIR` and clears excluded paths like `target/` out of the materialized snapshot first. That matters because old build output can otherwise hide real failures.
+
+### Worktree capture has safe defaults
+
+Live worktree snapshots always skip:
+
+- `.git`
+- `.syft`
+- `target`
+
+Extra repo-specific exclusions come from `capture_excludes` in `.syft/repo.toml`.
+
 ### The semantic model avoids a giant symbol-kind enum
 
 This was a deliberate correction early on.
@@ -138,4 +152,3 @@ The split is meant to stay simple:
 If you add new end-user behavior, update `docs/cli.md`.
 
 If you change crate boundaries, storage layout, or the runtime model, update the matching docs file here.
-

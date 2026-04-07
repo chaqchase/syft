@@ -333,7 +333,8 @@ fn main() -> Result<()> {
                             run_typecheck: true,
                         };
                     }
-                    emit_change(cli.json, &app.validate_change(&args.node_id, &plan)?)?;
+                    let node = app.validate_change(&args.node_id, &plan)?;
+                    emit_validated_change(cli.json, &node, &plan)?;
                 }
                 ChangeCommands::Promote(args) => {
                     let approved_by = args
@@ -452,13 +453,45 @@ fn emit_change(as_json: bool, node: &ChangeNode) -> Result<()> {
         as_json,
         node,
         &format!(
-            "change {} {} risk={} validations={}",
+            "change {} {} status={:?} validation={} risk={} validations={}",
             node.id,
             node.title,
+            node.status,
+            validation_outcome(node),
             node.risk.score,
             node.validation_artifact_ids.len()
         ),
     )
+}
+
+fn emit_validated_change(as_json: bool, node: &ChangeNode, plan: &ValidationPlan) -> Result<()> {
+    let run_count = usize::from(plan.run_typecheck)
+        + usize::from(plan.run_tests)
+        + usize::from(plan.run_lint);
+    emit(
+        as_json,
+        node,
+        &format!(
+            "change {} {} status={:?} validation={} ran={} risk={} validations={}",
+            node.id,
+            node.title,
+            node.status,
+            validation_outcome(node),
+            run_count,
+            node.risk.score,
+            node.validation_artifact_ids.len()
+        ),
+    )
+}
+
+fn validation_outcome(node: &ChangeNode) -> &'static str {
+    match node.status {
+        syft_types::ChangeNodeStatus::Validated | syft_types::ChangeNodeStatus::Approved => {
+            "passed"
+        }
+        syft_types::ChangeNodeStatus::Rejected => "failed",
+        _ => "pending",
+    }
 }
 
 fn emit_promotion(as_json: bool, record: &PromotionRecord) -> Result<()> {

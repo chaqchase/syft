@@ -4,6 +4,8 @@ The current repo model is local-first and file-based.
 
 Everything `syft` needs lives under `.syft/` inside the Git repo.
 
+That sounds simple because it is simple. Right now that is a good thing.
+
 ## Control directory layout
 
 This is the layout today:
@@ -34,9 +36,11 @@ Some of those directories are mostly placeholders right now.
 
 This is the repo config file.
 
-It stores the repo ID, name, default lineage, object store mode, metadata mode, enabled semantic languages, and whether the Git bridge is on.
+It stores the repo ID, name, default lineage, object store mode, metadata mode, enabled semantic languages, whether the Git bridge is on, and any extra snapshot-capture exclusions for this repo.
 
 It is small and human-readable on purpose.
+
+`capture_excludes` is for repo-specific extra rules. The built-in safe defaults are always applied separately.
 
 ## SQLite metadata
 
@@ -97,6 +101,26 @@ It is used as the default task when `syft change propose` is called without `--t
 Nothing writes this implicitly. You set it with `syft task set-current <id>`.
 
 That keeps task context explicit instead of surprising.
+
+## Snapshot capture exclusions
+
+Worktree snapshots always exclude a small built-in set:
+
+- `.git`
+- `.syft`
+- `target`
+
+That happens even if the repo forgot to ignore those paths in Git.
+
+You can add extra repo-local exclusions through `capture_excludes` in `.syft/repo.toml`.
+
+Those values are repo-root-relative path prefixes.
+
+Examples:
+
+- `dist`
+- `.cache/build`
+- `generated/schema.json`
 
 ## Core entities
 
@@ -172,6 +196,8 @@ It stores:
 
 `details_ref` points to a `ValidationDetails` payload in object storage. That payload stores the command, exit status, stdout, and stderr.
 
+Validation runs also clean excluded paths out of the temp materialization before running commands. That keeps old generated output from changing the result.
+
 ### `PromotionRecord`
 
 This records that a change node was promoted into a target lineage.
@@ -221,4 +247,3 @@ A few shortcuts are worth calling out:
 - there is no cache invalidation story because there is barely any cache
 
 That is fine for the current phase. The design is trying to stay legible while the model settles down.
-

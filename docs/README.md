@@ -2,7 +2,9 @@
 
 This folder is for the nuts and bolts.
 
-The root [`README.md`](/Users/mohamedachaq/rework/cronacl-saas/git-alrt/syft/README.md) stays focused on what `syft` is, why it exists, and the design choices behind it. The docs here are for how it is wired today.
+The root [`README.md`](/Users/mohamedachaq/rework/cronacl-saas/git-alrt/syft/README.md) is the high-level picture.
+
+This folder is the practical part. It is about how the current build works, where things live, and what the CLI actually does today.
 
 Start here:
 
@@ -11,5 +13,6 @@ Start here:
 - [`cli.md`](/Users/mohamedachaq/rework/cronacl-saas/git-alrt/syft/docs/cli.md) for commands and the current user workflow
 - [`development.md`](/Users/mohamedachaq/rework/cronacl-saas/git-alrt/syft/docs/development.md) for local development, tests, and current constraints
 
-This is all based on the code that exists now, not the longer-term wish list.
+All of this is based on the code that exists now.
 
+There is a longer-term idea behind the project, sure, but these docs are meant to be useful when you are actually in the repo trying to understand the current system.

@@ -59,6 +59,14 @@ This does not move `.syft/state/head`.
 
 That is important. It means you can capture a work-in-progress result and still propose it against the current head by default.
 
+It also applies built-in safe exclusions while capturing:
+
+- `.git`
+- `.syft`
+- `target`
+
+Extra repo-specific exclusions can be added through `capture_excludes` in `.syft/repo.toml`.
+
 ### `syft snapshot list`
 
 Lists snapshots for the current repo.
@@ -178,6 +186,8 @@ Supported flags:
 
 These map to local cargo commands run against a materialized snapshot.
 
+Validation runs in a clean temp build directory and clears excluded paths out of the materialized tree first. That keeps stale generated output from making a broken change look healthy.
+
 ### `syft change promote <change-id> --to <lineage>`
 
 Marks a change as promoted and optionally exports it back into Git.
@@ -234,4 +244,3 @@ It makes the rest of the flow much smoother.
 ### Use JSON for tooling
 
 The text output is for humans. The JSON output is stable enough to script against if you want to build wrappers or editor tooling on top.
-

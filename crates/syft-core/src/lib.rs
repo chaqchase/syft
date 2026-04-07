@@ -9,7 +9,7 @@ use syft_git::{
     capture_worktree_snapshot, current_commit, ensure_git_repo, export_snapshot_to_git_commit,
     import_git_commit, materialize_snapshot_to,
 };
-use syft_objects::{diff_snapshot_indices, snapshot_index};
+use syft_objects::{diff_snapshot_indices, effective_capture_excludes, snapshot_index};
 use syft_semantic::diff_snapshots;
 use syft_store::{FsObjectStore, MetadataStore, ObjectStore, SqliteMetadataStore};
 use syft_types::{
@@ -126,6 +126,7 @@ impl SyftApp {
             metadata_db: "sqlite".to_string(),
             semantic_languages: vec!["rust".to_string()],
             git_bridge: true,
+            capture_excludes: Vec::new(),
         };
 
         fs::write(syft_dir.join("repo.toml"), toml::to_string_pretty(&config)?)?;
@@ -278,6 +279,10 @@ impl SyftApp {
             );
         };
         Ok(Some(task))
+    }
+
+    fn effective_capture_excludes(&self) -> Vec<String> {
+        effective_capture_excludes(&self.repo_config.capture_excludes)
     }
 
     fn validation_records_for_node(
@@ -517,6 +522,7 @@ impl ChangeService for SyftApp {
             &result_snapshot.root_tree_hash,
             &self.object_store,
             plan,
+            &self.effective_capture_excludes(),
         )?;
 
         for artifact in &artifacts {

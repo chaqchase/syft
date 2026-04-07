@@ -40,6 +40,8 @@ pub struct RepoConfig {
     pub metadata_db: String,
     pub semantic_languages: Vec<String>,
     pub git_bridge: bool,
+    #[serde(default)]
+    pub capture_excludes: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

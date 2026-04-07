@@ -283,6 +283,9 @@ fn failing_validation_logs_are_exposed_in_change_show() {
         &["change", "show", change["id"].as_str().unwrap(), "--logs"],
     );
     assert!(text.contains("stdout:") || text.contains("stderr:"));
+
+    let history = syft_json(repo.path(), &["history"]);
+    assert_eq!(history[0]["validation_status"], "Failed");
 }
 
 #[test]
@@ -355,6 +358,111 @@ fn missing_context_and_stale_current_task_fail_clearly() {
     let stale_error = syft_fail(repo_two.path(), &["task", "current"]);
     assert!(stale_error.contains("current task"));
     assert!(stale_error.contains("set-current"));
+}
+
+#[test]
+fn snapshot_capture_excludes_target_and_validation_rejects_source_only_failure() {
+    let repo = setup_fixture_repo();
+
+    syft_json(repo.path(), &["init", "--name", "fixture"]);
+    let _base_snapshot = syft_json(repo.path(), &["repo", "import-git", "--commit", "HEAD"]);
+    let task = syft_json(
+        repo.path(),
+        &[
+            "task",
+            "create",
+            "--title",
+            "Source-only regression",
+            "--acceptance",
+            "target output stays out of snapshots",
+        ],
+    );
+    syft_json(
+        repo.path(),
+        &["task", "set-current", task["id"].as_str().unwrap()],
+    );
+
+    run(repo.path(), "cargo", &["test"]);
+    assert!(repo.path().join("target").exists());
+
+    fs::write(
+        repo.path().join("src/lib.rs"),
+        "pub fn greet() -> &'static str {\n    \"hello from syft\"\n}\n",
+    )
+    .unwrap();
+
+    let result_snapshot = syft_json(repo.path(), &["snapshot", "capture"]);
+    let change = syft_json(
+        repo.path(),
+        &[
+            "change",
+            "propose",
+            "--title",
+            "Break greet",
+            "--intent",
+            "prove validation ignores stale target output",
+            "--result",
+            result_snapshot["id"].as_str().unwrap(),
+        ],
+    );
+
+    let diff = syft_json(
+        repo.path(),
+        &["change", "diff", change["id"].as_str().unwrap()],
+    );
+    let ops = diff["ops"].as_array().unwrap();
+    assert!(ops.iter().all(|op| {
+        !op["path"]
+            .as_str()
+            .unwrap()
+            .starts_with("target/")
+    }));
+    assert!(ops.iter().any(|op| op["path"] == "src/lib.rs"));
+
+    let validate_text = syft_text(
+        repo.path(),
+        &["change", "validate", change["id"].as_str().unwrap(), "--tests"],
+    );
+    assert!(validate_text.contains("status=Rejected"));
+    assert!(validate_text.contains("validation=failed"));
+    assert!(validate_text.contains("ran=1"));
+
+    let detail = syft_json(
+        repo.path(),
+        &["change", "show", change["id"].as_str().unwrap(), "--logs"],
+    );
+    assert_eq!(detail["node"]["status"], "Rejected");
+    assert_eq!(detail["validations"][0]["artifact"]["status"], "Failed");
+    assert!(
+        detail["node"]["semantic_delta"]["touched_symbols"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|symbol| symbol["display_name"] == "greet")
+    );
+
+    let diff_text = syft_text(
+        repo.path(),
+        &["change", "diff", change["id"].as_str().unwrap()],
+    );
+    assert!(!diff_text.contains("target/"));
+
+    let status = syft_json(repo.path(), &["status"]);
+    assert!(
+        status["attention_needed"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item.as_str().unwrap().contains("failing validations"))
+    );
+    assert_eq!(
+        status["latest_validated_or_failed_change"]["validation_status"],
+        "Failed"
+    );
+
+    let history = syft_json(repo.path(), &["history"]);
+    assert_eq!(history[0]["node_id"], change["id"]);
+    assert_eq!(history[0]["validation_status"], "Failed");
 }
 
 fn setup_fixture_repo() -> tempfile::TempDir {

@@ -1,129 +1,186 @@
 # syft
 
-`syft` is an experiment in version control built for the way code gets made now.
+`syft` is a version control experiment for AI-heavy development.
 
-Git is still in the loop, but it is not the whole story. The point here is to treat a change as more than a patch. We want to keep the task, the intent, the result snapshot, the semantic impact, the validation evidence, and the promotion decision in one system.
+The short version is this: Git is good at snapshots and patches. It is less helpful when the thing you are trying to keep track of is a task, a few candidate solutions, the validation evidence, and the final promoted result.
 
-That matters a lot more once AI is part of the workflow.
+That gap shows up fast once AI is in the loop.
 
-When a person writes one careful patch by hand, a commit is usually enough. When a human and one or more agents are exploring a task, running tools, generating variants, and validating results, a plain diff starts to feel too small. You still need the diff, but you also need the reason for the change, what it touched, what passed, what failed, and what actually got promoted.
+You ask for a change. The model tries one path, then another. Maybe one passes tests and one almost works. Maybe both are messy in different ways. By the time you get to something worth keeping, the raw diff is only part of the story.
 
-That is the shape `syft` is aiming at.
+That is what `syft` is trying to hold onto.
 
-## Why this exists
+## What it is trying to model
 
-This project started from a simple frustration: Git is good at storing snapshots and patches, but it does not really model intent.
+The center of the system is a `ChangeNode`.
 
-Most AI-assisted work is intent-first.
+A change node ties together:
 
-You start with a task. You try one approach, then another. You run tests. You compare outcomes. You may throw away half the attempts. In that flow, the useful unit is not just "here is the diff". It is closer to "here is the candidate change for this task, here is what it changed, here is the evidence, and here is whether we should keep it".
+- the task
+- the base snapshot
+- the result snapshot
+- the intent
+- the semantic delta
+- the validation artifacts
+- the promotion state
 
-So `syft` puts a few different primitives up front:
+That gives you a better unit for AI-assisted work than a commit by itself.
 
-- `Task`
-- `Snapshot`
-- `ChangeNode`
-- `ValidationArtifact`
-- `PromotionRecord`
+Commits still matter. Diffs still matter. Git still matters. They just are not enough on their own once you have multiple attempts and tool-driven changes flying around.
 
-That is the core bet.
+## Why build this at all
 
-## The design decisions that matter
+This came from a pretty practical frustration.
 
-### 1. Git stays underneath for now
+Git can tell you what changed. It does not really tell you what the change was for, what else was tried, what evidence came with it, or why this candidate was the one that got kept.
 
-This is not trying to replace Git in one shot.
+In ordinary hand-written work, people usually patch over that with branch names, commit messages, PR descriptions, CI links, and memory.
 
-The current bootstrap keeps Git as the bridge in and out. We can import a Git commit into a snapshot. We can export a promoted snapshot back into Git. That makes the system usable without asking anyone to throw away existing tooling.
+That starts to feel thin with AI.
 
-It also keeps the early work honest. We are not hiding behind a big future architecture. We are proving the model in a real repo first.
+The pace is different. The number of candidates is different. The amount of bookkeeping goes up. You end up wanting a first-class record of intent and validation, not just a final patch.
 
-### 2. The primary unit is a change node, not a commit
+That is the bet here.
 
-A `ChangeNode` ties a task to a base snapshot and a result snapshot. It also carries intent, provenance, semantic delta, validation records, risk, and status.
+## Where it is better than Git for AI work
 
-That sounds a bit heavier than a commit because it is heavier.
+I think `syft` is better than plain Git in a few specific ways.
 
-The point is to preserve the context that usually gets scattered across commit messages, chat logs, CI output, and somebody's memory.
+It keeps the task attached to the change. That matters more than it sounds. A lot of AI work goes sideways because the actual goal gets separated from the patch.
 
-### 3. Review should lean semantic-first
+It keeps validation attached to the candidate. In Git, CI sits next to the commit. Here the validation artifacts belong to the change node itself, which is a much better fit when you are comparing attempts.
 
-Raw text diffs still matter. We already expose file-level patch ops and snapshot diffs in the CLI.
+It makes promotion explicit. You can have several candidate changes for one task and still make one clear decision about what actually moved forward.
 
-But the longer-term direction is different. If a change modifies a public API, touches dependency edges, or changes a symbol signature, that should be obvious without making the reviewer reverse-engineer it from the patch.
+It has room for semantic review. Right now that part is still small and Rust-only, but the direction is right. If a change touched a public symbol or shifted a dependency edge, the system should surface that directly.
 
-The current semantic layer is Rust-only and still pretty small, but that is the path we are on.
+It also fits parallel exploration better. Branches work. They just are not really the same thing as “three candidate implementations of the same intent.”
 
-### 4. Storage is local-first
+## Where it is still just a bootstrap
 
-Everything in the bootstrap is local.
+This project is still early.
 
-Repo metadata lives under `.syft/`. Metadata is stored in SQLite. Content-addressed objects live on disk. Validation runs locally against materialized snapshots. There is no API service, no worker system, and no remote coordination yet.
+It is local-first. There is no API layer, no worker system, no remote coordination, no multi-language semantic engine, and no native storage backend replacing Git.
 
-That was intentional. The first problem was to make the workflow real, not distributed.
+That was deliberate.
 
-### 5. Branches are not the center of the model
+The first job was to prove the model in a real repo with a real CLI and a real end-to-end loop. That part matters more than drawing a giant future architecture and pretending it already exists.
 
-Internally, this system cares more about snapshots, tasks, changes, and promotions than about branches.
+## What exists today
 
-Branches still matter when we export back to Git, but they are treated more like a compatibility surface than the main abstraction.
-
-## What is built right now
-
-The current workspace supports this end-to-end flow:
+The current workspace supports this flow:
 
 1. initialize a `syft` repo
 2. import a Git commit into a snapshot
 3. create a task
 4. capture a result snapshot from the worktree
 5. propose a change node against a base snapshot
-6. run validation on the result snapshot
+6. run validation on that result snapshot
 7. promote the change and optionally export it back to Git
 
-It also has the first read-side commands you need to inspect what is going on:
+It also has the read-side commands you need to inspect the state of the repo:
 
-- repo status
-- history
-- snapshot list, show, diff
-- task list, show, current, set-current, changes
-- change list, show, latest, diff
+- `status`
+- `history`
+- `snapshot list`, `show`, `diff`
+- `task list`, `show`, `current`, `set-current`, `changes`
+- `change list`, `show`, `latest`, `diff`, `validate`, `promote`
 
-This is still a bootstrap. It is useful, but not finished.
+Worktree capture now also skips the obvious junk by default:
 
-## What this is not trying to be yet
+- `.git`
+- `.syft`
+- `target`
 
-Some things are very deliberately missing right now:
+That change came out of real smoke testing. Without it, snapshots got flooded by build output and validation could be fooled by stale artifacts.
 
-- no API layer
-- no background workers
-- no remote sync story
-- no native Git replacement
-- no multi-language semantic engine
-- no composition or merge policy system
-- no smart variant ranking
+## Design choices that matter
 
-Those may come later. They are not needed to prove the core model.
+### Git stays underneath for now
 
-## Why the AI angle changes the design
+`syft` imports from Git and can export promoted snapshots back to Git.
 
-The main shift is volume and shape.
+That keeps the system usable while the model is still taking shape. It also means this can be tested in normal repos without asking anyone to buy into a full replacement story upfront.
 
-AI systems can generate a lot of plausible changes quickly. That is useful, but it creates a bookkeeping problem. You need a system that can keep multiple candidate implementations tied to one task, hold onto the evidence, and make promotion an explicit step.
+### Changes are heavier than commits
 
-Git can store the end result. It does not really help much with the rest.
+That is intentional.
 
-`syft` is trying to cover that middle ground.
+A change node is carrying more context because AI-assisted work usually needs more context. The extra weight is the point.
 
-It is basically a version-control-shaped system for intent, evidence, and promotion, with Git still doing the transport job underneath.
+### The system is local-first
 
-## Reading the rest
+Everything lives under `.syft/`.
 
-The root README is meant to stay high level.
+Metadata is in SQLite. Objects are on disk. Validation runs locally against a materialized snapshot. There is a lot less machinery here than there would be in a service-first design.
 
-The technical details live in [`docs/README.md`](/Users/mohamedachaq/rework/cronacl-saas/git-alrt/syft/docs/README.md):
+### Branches are secondary
 
-- architecture and crate layout
-- repo layout and storage model
-- CLI commands and expected workflows
-- development notes and testing
+Internally this is more about tasks, snapshots, changes, and promotions than about branches.
 
+Branches still matter at the Git boundary. They just are not the main shape of the system.
+
+## FAQ
+
+### Is this trying to replace Git?
+
+No. Not today.
+
+Git is still the import and export layer. `syft` is acting more like a richer control plane on top of it.
+
+### Why not just use branches and pull requests?
+
+You can get part of the way there with branches and PRs.
+
+What they do not give you very well is a first-class record of multiple candidate implementations for one task, along with their semantic deltas, validation artifacts, and promotion state.
+
+That is the part `syft` is focused on.
+
+### Why is this useful for AI specifically?
+
+Because AI tends to increase the number of attempts.
+
+Once you have a few candidate changes for one intent, plus validation output, plus some amount of semantic review, a commit log starts to feel too flat. You want something closer to a task-and-candidate graph.
+
+### Why keep Git at all?
+
+Because it is still the easiest way to stay compatible with the rest of the world.
+
+Repos, hosting, review tools, and developer habits already run through Git. Throwing that away early would make the project harder to test and easier to hand-wave.
+
+### What does `syft` actually store?
+
+Right now it stores repo metadata, snapshots, tasks, change nodes, validation artifacts, and promotions under `.syft/`.
+
+SQLite holds the metadata. The object store holds blobs, trees, snapshot content, and full validation logs.
+
+### Why are snapshots local-first?
+
+Because the problem being worked on first is modeling the change properly.
+
+Remote sync, APIs, workers, and multi-user coordination are real problems. They are just later problems.
+
+### Is the semantic layer production ready?
+
+No.
+
+It is useful, but still pretty narrow. It is Rust-only right now and meant to prove the shape of semantic review, not to claim full language coverage.
+
+### Is this better than Git already?
+
+For general version control, no.
+
+For AI-heavy change exploration, I think it is heading in a better direction because it has better places to store task intent, validation evidence, and promotion decisions.
+
+That is still being proven. The current version is honest bootstrap software.
+
+## Read the rest
+
+The README stays high level on purpose.
+
+The technical detail is in [`docs/README.md`](/Users/mohamedachaq/rework/cronacl-saas/git-alrt/syft/docs/README.md):
+
+- workspace and crate layout
+- storage model
+- CLI behavior
+- development notes
