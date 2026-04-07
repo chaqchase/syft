@@ -5,7 +5,8 @@ use anyhow::{Context, Result, anyhow};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Serialize, de::DeserializeOwned};
 use syft_types::{
-    ChangeNode, ObjectHash, PromotionRecord, Repo, Snapshot, Task, ValidationArtifact, hash_bytes,
+    ChangeNode, ManagedWorktree, ObjectHash, PromotionRecord, Repo, Snapshot, Task,
+    ValidationArtifact, hash_bytes,
 };
 
 pub trait MetadataStore: Send + Sync {
@@ -22,6 +23,12 @@ pub trait MetadataStore: Send + Sync {
     fn get_change_node(&self, id: &str) -> Result<Option<ChangeNode>>;
     fn list_change_nodes(&self, repo_id: &str, limit: Option<usize>) -> Result<Vec<ChangeNode>>;
     fn update_change_node(&self, node: &ChangeNode) -> Result<()>;
+    fn create_worktree(&self, worktree: &ManagedWorktree) -> Result<()>;
+    fn get_worktree(&self, id: &str) -> Result<Option<ManagedWorktree>>;
+    fn get_worktree_by_name(&self, repo_id: &str, name: &str) -> Result<Option<ManagedWorktree>>;
+    fn list_worktrees(&self, repo_id: &str) -> Result<Vec<ManagedWorktree>>;
+    fn list_worktrees_for_task(&self, task_id: &str) -> Result<Vec<ManagedWorktree>>;
+    fn update_worktree(&self, worktree: &ManagedWorktree) -> Result<()>;
     fn create_validation_artifact(&self, artifact: &ValidationArtifact) -> Result<()>;
     fn get_validation_artifact(&self, id: &str) -> Result<Option<ValidationArtifact>>;
     fn list_validation_artifacts_for_node(&self, node_id: &str) -> Result<Vec<ValidationArtifact>>;
@@ -90,6 +97,16 @@ impl MetadataStore for SqliteMetadataStore {
                 id TEXT PRIMARY KEY,
                 repo_id TEXT NOT NULL,
                 task_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                status TEXT NOT NULL,
+                data TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS worktrees (
+                id TEXT PRIMARY KEY,
+                repo_id TEXT NOT NULL,
+                task_id TEXT NOT NULL,
+                name TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 status TEXT NOT NULL,
                 data TEXT NOT NULL
@@ -255,6 +272,68 @@ impl MetadataStore for SqliteMetadataStore {
 
     fn update_change_node(&self, node: &ChangeNode) -> Result<()> {
         self.create_change_node(node)
+    }
+
+    fn create_worktree(&self, worktree: &ManagedWorktree) -> Result<()> {
+        let connection = self.connect()?;
+        let data = to_json(worktree)?;
+        connection.execute(
+            "INSERT OR REPLACE INTO worktrees (id, repo_id, task_id, name, created_at, status, data) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                worktree.id,
+                worktree.repo_id,
+                worktree.task_id,
+                worktree.name,
+                worktree.created_at.to_rfc3339(),
+                format!("{:?}", worktree.status),
+                data
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn get_worktree(&self, id: &str) -> Result<Option<ManagedWorktree>> {
+        let connection = self.connect()?;
+        let data = connection
+            .query_row(
+                "SELECT data FROM worktrees WHERE id = ?1",
+                params![id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        data.map(|raw| from_json(&raw)).transpose()
+    }
+
+    fn get_worktree_by_name(&self, repo_id: &str, name: &str) -> Result<Option<ManagedWorktree>> {
+        let connection = self.connect()?;
+        let data = connection
+            .query_row(
+                "SELECT data FROM worktrees WHERE repo_id = ?1 AND name = ?2 ORDER BY created_at DESC LIMIT 1",
+                params![repo_id, name],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        data.map(|raw| from_json(&raw)).transpose()
+    }
+
+    fn list_worktrees(&self, repo_id: &str) -> Result<Vec<ManagedWorktree>> {
+        let connection = self.connect()?;
+        let mut statement = connection
+            .prepare("SELECT data FROM worktrees WHERE repo_id = ?1 ORDER BY created_at ASC")?;
+        let rows = statement.query_map(params![repo_id], |row| row.get::<_, String>(0))?;
+        collect_rows(rows)
+    }
+
+    fn list_worktrees_for_task(&self, task_id: &str) -> Result<Vec<ManagedWorktree>> {
+        let connection = self.connect()?;
+        let mut statement = connection
+            .prepare("SELECT data FROM worktrees WHERE task_id = ?1 ORDER BY created_at ASC")?;
+        let rows = statement.query_map(params![task_id], |row| row.get::<_, String>(0))?;
+        collect_rows(rows)
+    }
+
+    fn update_worktree(&self, worktree: &ManagedWorktree) -> Result<()> {
+        self.create_worktree(worktree)
     }
 
     fn create_validation_artifact(&self, artifact: &ValidationArtifact) -> Result<()> {

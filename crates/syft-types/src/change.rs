@@ -80,6 +80,8 @@ pub struct ChangeNode {
     pub id: EntityId,
     pub repo_id: EntityId,
     pub task_id: EntityId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_id: Option<EntityId>,
     pub title: String,
     pub intent: String,
     pub rationale: Option<String>,
@@ -138,6 +140,8 @@ pub struct ChangeHeadline {
     pub status: ChangeNodeStatus,
     pub task_id: Option<EntityId>,
     pub task_title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_name: Option<String>,
     pub validation_summary: Option<String>,
     pub validation_status: Option<ValidationStatus>,
     pub risk_score: u8,

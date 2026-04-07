@@ -4,8 +4,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ChangeHeadline, ChangeNode, ChangeNodeStatus, EntityId, PatchOp, PromotionHeadline,
-    PromotionRecord, Snapshot, Task, ValidationRecord, ValidationStatus,
+    ChangeHeadline, ChangeNode, ChangeNodeStatus, EntityId, ManagedWorktree, PatchOp,
+    PromotionHeadline, PromotionRecord, Snapshot, Task, ValidationRecord, ValidationStatus,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -13,6 +13,7 @@ pub struct RepoStatusSummary {
     pub repo_name: String,
     pub repo_id: EntityId,
     pub current_head_snapshot_id: Option<EntityId>,
+    pub current_worktree: Option<WorktreeHeadline>,
     pub latest_snapshot_at: Option<DateTime<Utc>>,
     pub task_counts: BTreeMap<String, usize>,
     pub change_counts: BTreeMap<String, usize>,
@@ -34,6 +35,7 @@ pub struct HistoryEntry {
     pub title: String,
     pub task_id: EntityId,
     pub task_title: String,
+    pub worktree_name: Option<String>,
     pub intent: String,
     pub changed_file_count: usize,
     pub touched_symbols: Vec<String>,
@@ -50,6 +52,7 @@ pub struct SnapshotListEntry {
     pub id: EntityId,
     pub source: String,
     pub label_summary: String,
+    pub worktree_name: Option<String>,
     pub parent_count: usize,
     pub created_at: DateTime<Utc>,
 }
@@ -58,6 +61,7 @@ pub struct SnapshotListEntry {
 pub struct SnapshotDetail {
     pub snapshot: Snapshot,
     pub source: String,
+    pub worktree_name: Option<String>,
     pub changed_file_count_from_parent: Option<usize>,
 }
 
@@ -68,6 +72,7 @@ pub struct ChangeListEntry {
     pub status: ChangeNodeStatus,
     pub task_id: EntityId,
     pub task_title: String,
+    pub worktree_name: Option<String>,
     pub risk_score: u8,
     pub latest_validation_summary: Option<String>,
     pub latest_validation_status: Option<ValidationStatus>,
@@ -80,8 +85,24 @@ pub struct ChangeListEntry {
 pub struct ChangeDetail {
     pub node: ChangeNode,
     pub task: Option<Task>,
+    pub worktree: Option<ManagedWorktree>,
     pub validations: Vec<ValidationRecord>,
     pub promotions: Vec<PromotionRecord>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorktreeHeadline {
+    pub id: EntityId,
+    pub name: String,
+    pub path: String,
+    pub branch: String,
+    pub task_id: EntityId,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorktreeDetail {
+    pub worktree: ManagedWorktree,
+    pub linked_change_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

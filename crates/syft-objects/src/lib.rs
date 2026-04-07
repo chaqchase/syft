@@ -103,6 +103,9 @@ pub fn capture_paths(
         if absolute_path.is_dir() {
             continue;
         }
+        if !absolute_path.exists() {
+            continue;
+        }
 
         let bytes = fs::read(&absolute_path)
             .with_context(|| format!("failed to read file {}", absolute_path.display()))?;

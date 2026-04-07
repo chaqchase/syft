@@ -13,6 +13,7 @@ flowchart TD
     arch["architecture.md"]
     storage["storage.md"]
     cli["cli.md"]
+    usage["usage.md"]
     dev["development.md"]
     release["releasing.md"]
 
@@ -20,6 +21,7 @@ flowchart TD
     docs --> arch
     docs --> storage
     docs --> cli
+    docs --> usage
     docs --> dev
     docs --> release
 ```
@@ -29,6 +31,7 @@ Start here:
 - [`architecture.md`](/Users/mohamedachaq/rework/cronacl-saas/git-alrt/syft/docs/architecture.md) for the workspace layout and how the crates fit together
 - [`storage.md`](/Users/mohamedachaq/rework/cronacl-saas/git-alrt/syft/docs/storage.md) for the `.syft/` directory, SQLite metadata, object storage, and core entities
 - [`cli.md`](/Users/mohamedachaq/rework/cronacl-saas/git-alrt/syft/docs/cli.md) for commands and the current user workflow
+- [`usage.md`](/Users/mohamedachaq/rework/cronacl-saas/git-alrt/syft/docs/usage.md) for concrete ways to use `syft`, including solo work, review flows, and parallel worktrees
 - [`development.md`](/Users/mohamedachaq/rework/cronacl-saas/git-alrt/syft/docs/development.md) for local development, tests, and current constraints
 - [`releasing.md`](/Users/mohamedachaq/rework/cronacl-saas/git-alrt/syft/docs/releasing.md) for CI, crates.io publishing, release binaries, and install scripts
 

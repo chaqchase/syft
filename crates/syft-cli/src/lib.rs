@@ -4,7 +4,7 @@ use anyhow::{Result, bail};
 use clap::Parser;
 use syft_core::{
     ChangeService, CreateTaskInput, PromoteChangeInput, ProposeChangeInput, QueryService,
-    RepoService, SyftApp, TaskService, current_username,
+    RepoService, SyftApp, TaskService, WorktreeCreateInput, WorktreeService, current_username,
 };
 use syft_types::{HistoryQuery, TaskPriority, ValidationPlan};
 
@@ -12,13 +12,13 @@ mod cli;
 mod output;
 
 use cli::{
-    ChangeCommands, Cli, Commands, RepoCommands, SnapshotCommands, TaskCommands,
+    ChangeCommands, Cli, Commands, RepoCommands, SnapshotCommands, TaskCommands, WorktreeCommands,
 };
 use output::{
     emit_change, emit_change_detail, emit_change_list, emit_current_task_set, emit_diff_summary,
     emit_history, emit_optional_task, emit_promotion, emit_snapshot, emit_snapshot_detail,
-    emit_snapshot_list, emit_status, emit_task, emit_task_detail, emit_tasks,
-    emit_validated_change,
+    emit_snapshot_list, emit_status, emit_task, emit_task_detail, emit_tasks, emit_validated_change,
+    emit_optional_worktree, emit_worktree, emit_worktree_detail, emit_worktree_list,
 };
 
 pub fn run() -> Result<()> {
@@ -182,6 +182,35 @@ pub fn run() -> Result<()> {
                 }
                 ChangeCommands::Latest(args) => {
                     emit_change_detail(cli.json, &app.latest_change(args.task.as_deref())?, false)?;
+                }
+            }
+        }
+        Commands::Worktree(args) => {
+            let app = SyftApp::open(&cwd)?;
+            match args.command {
+                WorktreeCommands::Create(args) => {
+                    emit_worktree(
+                        cli.json,
+                        &app.create_worktree(WorktreeCreateInput {
+                            task_id: args.task_id,
+                            name: args.name,
+                            source_ref: args.source_ref,
+                            path: args.path,
+                        })?,
+                        "created",
+                    )?;
+                }
+                WorktreeCommands::List => {
+                    emit_worktree_list(cli.json, &app.list_worktrees()?)?;
+                }
+                WorktreeCommands::Show { id_or_name } => {
+                    emit_worktree_detail(cli.json, &app.show_worktree(&id_or_name)?)?;
+                }
+                WorktreeCommands::Current => {
+                    emit_optional_worktree(cli.json, app.current_worktree()?.as_ref())?;
+                }
+                WorktreeCommands::Remove { id_or_name, force } => {
+                    emit_worktree(cli.json, &app.remove_worktree(&id_or_name, force)?, "removed")?;
                 }
             }
         }

@@ -26,6 +26,14 @@ pub fn emit_status(as_json: bool, status: &RepoStatusSummary) -> Result<()> {
 
     println!("repo: {} ({})", status.repo_name, status.repo_id);
     println!(
+        "current worktree: {}",
+        status
+            .current_worktree
+            .as_ref()
+            .map(|worktree| format!("{} [{}] {}", worktree.name, worktree.branch, worktree.path))
+            .unwrap_or_else(|| "<none>".to_string())
+    );
+    println!(
         "head snapshot: {}",
         status.current_head_snapshot_id.as_deref().unwrap_or("<none>")
     );
@@ -85,10 +93,14 @@ pub fn emit_history(as_json: bool, entries: &[HistoryEntry]) -> Result<()> {
 
     for entry in entries {
         println!(
-            "{}  {}  task={}  files={}  validation={}  promotion={}",
+            "{}  {}  task={}  worktree={}  files={}  validation={}  promotion={}",
             entry.node_id,
             entry.title,
             entry.task_title,
+            entry
+                .worktree_name
+                .clone()
+                .unwrap_or_else(|| "<none>".to_string()),
             entry.changed_file_count,
             entry
                 .validation_summary
@@ -118,9 +130,13 @@ pub fn emit_snapshot_list(as_json: bool, snapshots: &[SnapshotListEntry]) -> Res
 
     for snapshot in snapshots {
         println!(
-            "{}  {}  parents={}  labels={}  {}",
+            "{}  {}  worktree={}  parents={}  labels={}  {}",
             snapshot.id,
             snapshot.source,
+            snapshot
+                .worktree_name
+                .clone()
+                .unwrap_or_else(|| "<none>".to_string()),
             snapshot.parent_count,
             snapshot.label_summary,
             snapshot.created_at.to_rfc3339()
@@ -136,6 +152,13 @@ pub fn emit_snapshot_detail(as_json: bool, detail: &SnapshotDetail) -> Result<()
 
     println!("snapshot: {}", detail.snapshot.id);
     println!("source: {}", detail.source);
+    println!(
+        "worktree: {}",
+        detail
+            .worktree_name
+            .clone()
+            .unwrap_or_else(|| "<none>".to_string())
+    );
     println!("created: {}", detail.snapshot.created_at.to_rfc3339());
     println!("root tree: {}", detail.snapshot.root_tree_hash);
     println!(

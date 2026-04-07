@@ -3,6 +3,7 @@ use clap::{Args, Parser, Subcommand};
 #[derive(Parser, Debug)]
 #[command(name = "syft")]
 #[command(about = "AI-native version control bootstrap CLI")]
+#[command(version)]
 pub struct Cli {
     #[arg(long, global = true)]
     pub json: bool,
@@ -19,6 +20,7 @@ pub enum Commands {
     Snapshot(SnapshotArgs),
     Task(TaskArgs),
     Change(ChangeArgs),
+    Worktree(WorktreeArgs),
 }
 
 #[derive(Args, Debug)]
@@ -174,4 +176,35 @@ pub struct ChangeShowArgs {
 pub struct ChangeLatestArgs {
     #[arg(long)]
     pub task: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct WorktreeArgs {
+    #[command(subcommand)]
+    pub command: WorktreeCommands,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum WorktreeCommands {
+    Create(WorktreeCreateArgs),
+    List,
+    Show { id_or_name: String },
+    Current,
+    Remove {
+        id_or_name: String,
+        #[arg(long)]
+        force: bool,
+    },
+}
+
+#[derive(Args, Debug)]
+pub struct WorktreeCreateArgs {
+    #[arg(long = "task")]
+    pub task_id: Option<String>,
+    #[arg(long)]
+    pub name: Option<String>,
+    #[arg(long = "from", default_value = "HEAD")]
+    pub source_ref: String,
+    #[arg(long)]
+    pub path: Option<String>,
 }

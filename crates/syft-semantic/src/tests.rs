@@ -134,6 +134,7 @@ fn snapshot(repo_id: &str, root_tree_hash: String) -> Snapshot {
             repo_id: repo_id.to_string(),
             source: SnapshotSource::MaterializedByHuman,
             labels: Vec::new(),
+            worktree_id: None,
         },
     }
 }

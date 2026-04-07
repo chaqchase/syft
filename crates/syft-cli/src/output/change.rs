@@ -64,11 +64,15 @@ pub fn emit_change_list(as_json: bool, changes: &[ChangeListEntry]) -> Result<()
 
     for change in changes {
         println!(
-            "{}  {}  {:?}  task={}  risk={}  validation={}  promotion={}",
+            "{}  {}  {:?}  task={}  worktree={}  risk={}  validation={}  promotion={}",
             change.node_id,
             change.title,
             change.status,
             change.task_title,
+            change
+                .worktree_name
+                .clone()
+                .unwrap_or_else(|| "<none>".to_string()),
             change.risk_score,
             change
                 .latest_validation_summary
@@ -97,6 +101,14 @@ pub fn emit_change_detail(as_json: bool, detail: &ChangeDetail, include_logs: bo
             .as_ref()
             .map(|task| format!("{} ({})", task.title, task.id))
             .unwrap_or_else(|| detail.node.task_id.clone())
+    );
+    println!(
+        "worktree: {}",
+        detail
+            .worktree
+            .as_ref()
+            .map(|worktree| format!("{} ({})", worktree.name, worktree.id))
+            .unwrap_or_else(|| "<none>".to_string())
     );
     println!("intent: {}", detail.node.intent);
     println!(

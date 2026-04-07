@@ -18,6 +18,22 @@ pub fn ensure_git_repo(repo_path: &Path) -> Result<()> {
     Ok(())
 }
 
+pub fn git_top_level(repo_path: &Path) -> Result<PathBuf> {
+    Ok(PathBuf::from(
+        run_git(repo_path, &["rev-parse", "--show-toplevel"])?
+            .trim()
+            .to_string(),
+    ))
+}
+
+pub fn git_dir(repo_path: &Path) -> Result<PathBuf> {
+    Ok(PathBuf::from(
+        run_git(repo_path, &["rev-parse", "--git-dir"])?
+            .trim()
+            .to_string(),
+    ))
+}
+
 pub fn current_commit(repo_path: &Path) -> Result<String> {
     Ok(run_git(repo_path, &["rev-parse", "HEAD"])?
         .trim()
@@ -74,6 +90,7 @@ pub fn import_git_commit(
                 commit_sha: commit.to_string(),
             },
             labels: vec!["git-import".to_string()],
+            worktree_id: None,
         },
     };
     Ok((snapshot, index))
@@ -96,6 +113,7 @@ pub fn capture_worktree_snapshot(
             repo_id: repo_config.repo_id.clone(),
             source: SnapshotSource::MaterializedByHuman,
             labels: vec!["worktree".to_string()],
+            worktree_id: None,
         },
     };
     Ok((snapshot, index))
@@ -122,6 +140,63 @@ pub fn export_snapshot_to_git_commit(
     run_git(repo_path, &["add", "-A"])?;
     run_git(repo_path, &["commit", "--allow-empty", "-m", message])?;
     current_commit(repo_path)
+}
+
+pub fn create_git_worktree(
+    repo_path: &Path,
+    branch: &str,
+    destination: &Path,
+    source_ref: &str,
+) -> Result<()> {
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    run_git(
+        repo_path,
+        &[
+            "worktree",
+            "add",
+            "-b",
+            branch,
+            &destination.to_string_lossy(),
+            source_ref,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn remove_git_worktree(repo_path: &Path, destination: &Path, force: bool) -> Result<()> {
+    if force {
+        run_git(
+            repo_path,
+            &[
+                "worktree",
+                "remove",
+                "--force",
+                &destination.to_string_lossy(),
+            ],
+        )?;
+    } else {
+        run_git(
+            repo_path,
+            &["worktree", "remove", &destination.to_string_lossy()],
+        )?;
+    }
+    Ok(())
+}
+
+pub fn branch_exists(repo_path: &Path, branch: &str) -> Result<bool> {
+    let status = Command::new("git")
+        .args(["show-ref", "--verify", "--quiet", &format!("refs/heads/{branch}")])
+        .current_dir(repo_path)
+        .status()
+        .with_context(|| format!("failed to check branch {branch}"))?;
+    Ok(status.success())
+}
+
+pub fn worktree_is_dirty(repo_path: &Path) -> Result<bool> {
+    let output = run_git_bytes(repo_path, &["status", "--porcelain"])?;
+    Ok(!output.is_empty())
 }
 
 fn git_commit_entries(repo_path: &Path, commit: &str) -> Result<Vec<(PathBuf, FileMode, Vec<u8>)>> {

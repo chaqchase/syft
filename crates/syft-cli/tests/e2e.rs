@@ -197,6 +197,16 @@ fn read_commands_and_history_work_end_to_end() {
 }
 
 #[test]
+fn version_flags_work() {
+    let repo = tempdir().unwrap();
+    let short = syft_text(repo.path(), &["-V"]);
+    assert!(short.starts_with("syft "));
+
+    let long = syft_text(repo.path(), &["--version"]);
+    assert_eq!(short, long);
+}
+
+#[test]
 fn failing_validation_logs_are_exposed_in_change_show() {
     let repo = setup_fixture_repo();
 
@@ -286,6 +296,50 @@ fn failing_validation_logs_are_exposed_in_change_show() {
 
     let history = syft_json(repo.path(), &["history"]);
     assert_eq!(history[0]["validation_status"], "Failed");
+}
+
+#[test]
+fn snapshot_capture_handles_deleted_tracked_files() {
+    let repo = setup_fixture_repo();
+
+    syft_json(repo.path(), &["init", "--name", "fixture"]);
+    let base_snapshot = syft_json(repo.path(), &["repo", "import-git", "--commit", "HEAD"]);
+    let task = syft_json(
+        repo.path(),
+        &["task", "create", "--title", "Handle deleted files"],
+    );
+    syft_json(
+        repo.path(),
+        &["task", "set-current", task["id"].as_str().unwrap()],
+    );
+
+    fs::remove_file(repo.path().join("README.md")).ok();
+    fs::remove_file(repo.path().join("src/main.rs")).unwrap();
+
+    let result_snapshot = syft_json(repo.path(), &["snapshot", "capture"]);
+    let change = syft_json(
+        repo.path(),
+        &[
+            "change",
+            "propose",
+            "--title",
+            "Delete main",
+            "--intent",
+            "make sure deleted tracked files become patch deletes",
+            "--base",
+            base_snapshot["id"].as_str().unwrap(),
+            "--result",
+            result_snapshot["id"].as_str().unwrap(),
+        ],
+    );
+
+    let diff = syft_json(
+        repo.path(),
+        &["change", "diff", change["id"].as_str().unwrap()],
+    );
+    assert!(diff["ops"].as_array().unwrap().iter().any(|op| {
+        op["kind"] == "Delete" && op["path"] == "src/main.rs"
+    }));
 }
 
 #[test]
@@ -533,6 +587,201 @@ fn snapshot_capture_excludes_target_and_validation_rejects_source_only_failure()
     assert_eq!(history[0]["validation_status"], "Failed");
 }
 
+#[test]
+fn managed_worktrees_support_parallel_capture_and_promotion() {
+    let repo = setup_fixture_repo();
+
+    syft_json(repo.path(), &["init", "--name", "fixture"]);
+    let _base_snapshot = syft_json(repo.path(), &["repo", "import-git", "--commit", "HEAD"]);
+    let task = syft_json(
+        repo.path(),
+        &["task", "create", "--title", "Explore parallel candidates"],
+    );
+    syft_json(
+        repo.path(),
+        &["task", "set-current", task["id"].as_str().unwrap()],
+    );
+
+    let no_current = syft_json(repo.path(), &["worktree", "current"]);
+    assert!(no_current.is_null());
+
+    let worktree_one = syft_json(repo.path(), &["worktree", "create"]);
+    let worktree_two = syft_json(repo.path(), &["worktree", "create"]);
+    assert_eq!(worktree_one["task_id"], task["id"]);
+    assert_eq!(worktree_two["task_id"], task["id"]);
+    assert_ne!(worktree_one["name"], worktree_two["name"]);
+    assert_ne!(worktree_one["branch"], worktree_two["branch"]);
+
+    let listed = syft_json(repo.path(), &["worktree", "list"]);
+    assert_eq!(listed.as_array().unwrap().len(), 2);
+
+    let shown = syft_json(
+        repo.path(),
+        &["worktree", "show", worktree_one["id"].as_str().unwrap()],
+    );
+    assert_eq!(shown["worktree"]["id"], worktree_one["id"]);
+    assert_eq!(shown["linked_change_count"], 0);
+
+    let worktree_one_path = std::path::PathBuf::from(worktree_one["path"].as_str().unwrap());
+    let worktree_two_path = std::path::PathBuf::from(worktree_two["path"].as_str().unwrap());
+
+    let current_worktree = syft_json(&worktree_one_path, &["worktree", "current"]);
+    assert_eq!(current_worktree["id"], worktree_one["id"]);
+
+    fs::write(
+        worktree_one_path.join("src/lib.rs"),
+        "pub fn greet() -> &'static str {\n    \"candidate one\"\n}\n",
+    )
+    .unwrap();
+    fs::write(
+        worktree_one_path.join("tests/smoke.rs"),
+        "use fixture::greet;\n\n#[test]\nfn smoke() {\n    assert_eq!(greet(), \"candidate one\");\n}\n",
+    )
+    .unwrap();
+
+    let snapshot_one = syft_json(&worktree_one_path, &["snapshot", "capture"]);
+    let change_one = syft_json(
+        &worktree_one_path,
+        &[
+            "change",
+            "propose",
+            "--title",
+            "Candidate one",
+            "--intent",
+            "try the first parallel path",
+            "--result",
+            snapshot_one["id"].as_str().unwrap(),
+        ],
+    );
+    assert_eq!(change_one["worktree_id"], worktree_one["id"]);
+    let validated_one = syft_json(
+        &worktree_one_path,
+        &["change", "validate", change_one["id"].as_str().unwrap(), "--tests"],
+    );
+    assert_eq!(validated_one["status"], "Validated");
+
+    fs::write(
+        worktree_two_path.join("src/lib.rs"),
+        "pub fn greet() -> &'static str {\n    \"candidate two\"\n}\n",
+    )
+    .unwrap();
+    fs::write(
+        worktree_two_path.join("tests/smoke.rs"),
+        "use fixture::greet;\n\n#[test]\nfn smoke() {\n    assert_eq!(greet(), \"candidate two\");\n}\n",
+    )
+    .unwrap();
+
+    let snapshot_two = syft_json(&worktree_two_path, &["snapshot", "capture"]);
+    let change_two = syft_json(
+        &worktree_two_path,
+        &[
+            "change",
+            "propose",
+            "--title",
+            "Candidate two",
+            "--intent",
+            "try the second parallel path",
+            "--result",
+            snapshot_two["id"].as_str().unwrap(),
+        ],
+    );
+    assert_eq!(change_two["worktree_id"], worktree_two["id"]);
+
+    let repo_status = syft_json(repo.path(), &["status"]);
+    assert!(repo_status["current_worktree"].is_null());
+    let worktree_status = syft_json(&worktree_one_path, &["status"]);
+    assert_eq!(worktree_status["current_worktree"]["id"], worktree_one["id"]);
+
+    let history = syft_json(repo.path(), &["history"]);
+    assert_eq!(history.as_array().unwrap().len(), 2);
+    assert!(history
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["worktree_name"] == worktree_one["name"]));
+    assert!(history
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["worktree_name"] == worktree_two["name"]));
+
+    let task_changes = syft_json(
+        repo.path(),
+        &["task", "changes", task["id"].as_str().unwrap()],
+    );
+    assert_eq!(task_changes.as_array().unwrap().len(), 2);
+    assert!(task_changes
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["worktree_name"] == worktree_one["name"]));
+
+    let change_detail = syft_json(
+        repo.path(),
+        &["change", "show", change_one["id"].as_str().unwrap()],
+    );
+    assert_eq!(change_detail["worktree"]["id"], worktree_one["id"]);
+
+    syft_json(
+        &worktree_one_path,
+        &[
+            "change",
+            "promote",
+            change_one["id"].as_str().unwrap(),
+            "--to",
+            "main",
+        ],
+    );
+
+    let main_repo_src = fs::read_to_string(repo.path().join("src/lib.rs")).unwrap();
+    assert!(main_repo_src.contains("candidate one"));
+    let message = run_capture(repo.path(), "git", &["log", "-1", "--pretty=%B"]);
+    assert!(message.contains("syft promote: Candidate one -> main"));
+
+    let shown_after = syft_json(
+        repo.path(),
+        &["worktree", "show", worktree_one["id"].as_str().unwrap()],
+    );
+    assert_eq!(shown_after["linked_change_count"], 1);
+}
+
+#[test]
+fn worktree_remove_refuses_dirty_without_force() {
+    let repo = setup_fixture_repo();
+
+    syft_json(repo.path(), &["init", "--name", "fixture"]);
+    syft_json(repo.path(), &["repo", "import-git", "--commit", "HEAD"]);
+    let task = syft_json(
+        repo.path(),
+        &["task", "create", "--title", "Try removing a dirty worktree"],
+    );
+    syft_json(
+        repo.path(),
+        &["task", "set-current", task["id"].as_str().unwrap()],
+    );
+
+    let worktree = syft_json(repo.path(), &["worktree", "create"]);
+    let worktree_path = std::path::PathBuf::from(worktree["path"].as_str().unwrap());
+    fs::write(
+        worktree_path.join("src/lib.rs"),
+        "pub fn greet() -> &'static str {\n    \"dirty\"\n}\n",
+    )
+    .unwrap();
+
+    let error = syft_fail(
+        repo.path(),
+        &["worktree", "remove", worktree["id"].as_str().unwrap()],
+    );
+    assert!(error.contains("uncommitted changes"));
+
+    let removed = syft_json(
+        repo.path(),
+        &["worktree", "remove", worktree["id"].as_str().unwrap(), "--force"],
+    );
+    assert_eq!(removed["status"], "Removed");
+    assert!(!worktree_path.exists());
+}
+
 fn setup_fixture_repo() -> tempfile::TempDir {
     let repo = tempdir().unwrap();
     run(repo.path(), "git", &["init"]);
@@ -549,6 +798,7 @@ fn setup_fixture_repo() -> tempfile::TempDir {
         "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
     )
     .unwrap();
+    fs::write(repo.path().join("README.md"), "# fixture\n").unwrap();
     fs::write(
         repo.path().join("src/main.rs"),
         "fn main() {\n    println!(\"hello\");\n}\n",

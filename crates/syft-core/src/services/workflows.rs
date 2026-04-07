@@ -1,25 +1,26 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 use syft_git::{
-    capture_worktree_snapshot, export_snapshot_to_git_commit, import_git_commit,
-    materialize_snapshot_to,
+    branch_exists, capture_worktree_snapshot, create_git_worktree, export_snapshot_to_git_commit,
+    import_git_commit, materialize_snapshot_to, remove_git_worktree, worktree_is_dirty,
 };
 use syft_objects::{diff_snapshot_indices, snapshot_index};
 use syft_semantic::diff_snapshots;
 use syft_store::MetadataStore;
 use syft_types::{
-    ChangeNode, ChangeNodeStatus, PromotionRecord, Snapshot, Task, TaskStatus, ValidationPlan,
-    ValidationStatus, new_entity_id, now_utc,
+    ChangeNode, ChangeNodeStatus, ManagedWorktree, ManagedWorktreeStatus, PromotionRecord,
+    Snapshot, Task, TaskStatus, ValidationPlan, ValidationStatus, WorktreeDetail, new_entity_id,
+    now_utc,
 };
 use syft_validate::ValidationRunner;
 
-use crate::app::SyftApp;
+use crate::app::{SyftApp, write_worktree_marker};
 use crate::contracts::{
     ChangeService, CreateTaskInput, PromoteChangeInput, ProposeChangeInput, RepoService,
-    TaskService,
+    TaskService, WorktreeCreateInput, WorktreeService,
 };
-use crate::helpers::{calculate_risk, default_provenance};
+use crate::helpers::{calculate_risk, default_provenance, shorten_id, slugify};
 
 impl RepoService for SyftApp {
     fn import_git_commit(&self, commit: &str) -> Result<Snapshot> {
@@ -28,7 +29,7 @@ impl RepoService for SyftApp {
             .map(|id| vec![id])
             .unwrap_or_default();
         let (snapshot, _) = import_git_commit(
-            &self.repo_path,
+            &self.control_repo_path,
             &self.repo_config,
             commit,
             &self.object_store,
@@ -46,12 +47,13 @@ impl RepoService for SyftApp {
             .current_head_snapshot_id()?
             .map(|id| vec![id])
             .unwrap_or_default();
-        let (snapshot, _) = capture_worktree_snapshot(
-            &self.repo_path,
+        let (mut snapshot, _) = capture_worktree_snapshot(
+            &self.workspace_path,
             &capture_config,
             &self.object_store,
             parent_snapshot_ids,
         )?;
+        snapshot.metadata.worktree_id = self.current_worktree.as_ref().map(|worktree| worktree.id.clone());
         self.metadata_store.create_snapshot(&snapshot)?;
         Ok(snapshot)
     }
@@ -118,6 +120,7 @@ impl ChangeService for SyftApp {
             id: new_entity_id(),
             repo_id: task.repo_id,
             task_id: task.id,
+            worktree_id: self.current_worktree.as_ref().map(|worktree| worktree.id.clone()),
             title: input.title,
             intent: input.intent,
             rationale: input.rationale,
@@ -188,7 +191,7 @@ impl ChangeService for SyftApp {
             let commit_message =
                 format!("syft promote: {} -> {}", node.title, input.target_lineage);
             let _commit_sha = export_snapshot_to_git_commit(
-                &self.repo_path,
+                &self.control_repo_path,
                 &snapshot.root_tree_hash,
                 &self.object_store,
                 &commit_message,
@@ -211,4 +214,139 @@ impl ChangeService for SyftApp {
         self.persist_head(&node.result_snapshot_id)?;
         Ok(record)
     }
+}
+
+impl WorktreeService for SyftApp {
+    fn create_worktree(&self, input: WorktreeCreateInput) -> Result<ManagedWorktree> {
+        let task_id = self.resolve_task_id(input.task_id.as_deref())?;
+        let task = self.get_task_by_id(&task_id)?;
+        let repo = self.repo()?;
+        let base_name = input
+            .name
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| default_worktree_name(&task));
+        let base_path = input
+            .path
+            .map(|path| resolve_worktree_path(&self.workspace_path, PathBuf::from(path)))
+            .unwrap_or_else(|| {
+                default_worktree_root(&self.control_repo_path, &repo.name).join(&base_name)
+            });
+
+        let mut attempt = 0usize;
+        loop {
+            let suffix = if attempt == 0 {
+                String::new()
+            } else {
+                format!("-{}", attempt + 1)
+            };
+            let name = format!("{base_name}{suffix}");
+            let branch = format!("syft/{}/{}", task.id, name);
+            let path = append_path_suffix(&base_path, &suffix);
+
+            let path_string = path.to_string_lossy().to_string();
+            let name_taken = self
+                .metadata_store
+                .get_worktree_by_name(&self.repo_config.repo_id, &name)?
+                .is_some();
+            if !name_taken && !path.exists() && !branch_exists(&self.control_repo_path, &branch)? {
+                create_git_worktree(&self.control_repo_path, &branch, &path, &input.source_ref)?;
+                let now = now_utc();
+                let worktree = ManagedWorktree {
+                    id: new_entity_id(),
+                    repo_id: self.repo_config.repo_id.clone(),
+                    task_id: task.id.clone(),
+                    name,
+                    branch,
+                    path: path_string,
+                    source_ref: input.source_ref.clone(),
+                    status: ManagedWorktreeStatus::Active,
+                    created_at: now,
+                    updated_at: now,
+                };
+                self.metadata_store.create_worktree(&worktree)?;
+                write_worktree_marker(&path, &self.control_repo_path, &worktree.id)?;
+                return Ok(worktree);
+            }
+            attempt += 1;
+        }
+    }
+
+    fn list_worktrees(&self) -> Result<Vec<ManagedWorktree>> {
+        self.metadata_store.list_worktrees(&self.repo_config.repo_id)
+    }
+
+    fn show_worktree(&self, id_or_name: &str) -> Result<WorktreeDetail> {
+        let worktree = self.resolve_worktree_by_id_or_name(id_or_name)?;
+        let linked_change_count = self
+            .metadata_store
+            .list_change_nodes(&self.repo_config.repo_id, None)?
+            .into_iter()
+            .filter(|change| change.worktree_id.as_deref() == Some(worktree.id.as_str()))
+            .count();
+        Ok(WorktreeDetail {
+            worktree,
+            linked_change_count,
+        })
+    }
+
+    fn current_worktree(&self) -> Result<Option<ManagedWorktree>> {
+        Ok(self.current_worktree.clone())
+    }
+
+    fn remove_worktree(&self, id_or_name: &str, force: bool) -> Result<ManagedWorktree> {
+        let mut worktree = self.resolve_worktree_by_id_or_name(id_or_name)?;
+        let worktree_path = PathBuf::from(&worktree.path);
+
+        if !force && worktree_is_dirty(&worktree_path)? {
+            bail!(
+                "worktree {} has uncommitted changes; rerun with --force to remove it",
+                worktree.name
+            );
+        }
+
+        remove_git_worktree(&self.control_repo_path, &worktree_path, force)?;
+        worktree.status = ManagedWorktreeStatus::Removed;
+        worktree.updated_at = now_utc();
+        self.metadata_store.update_worktree(&worktree)?;
+        Ok(worktree)
+    }
+}
+
+fn default_worktree_name(task: &Task) -> String {
+    let slug = slugify(&task.title);
+    if slug.is_empty() {
+        format!("task-{}", shorten_id(&task.id))
+    } else {
+        format!("{slug}-{}", shorten_id(&task.id))
+    }
+}
+
+fn default_worktree_root(control_repo_path: &Path, repo_name: &str) -> PathBuf {
+    control_repo_path
+        .parent()
+        .unwrap_or(control_repo_path)
+        .join(format!("{}-syft", slugify(repo_name)))
+}
+
+fn resolve_worktree_path(workspace_path: &Path, path: PathBuf) -> PathBuf {
+    if path.is_absolute() {
+        path
+    } else {
+        workspace_path.join(path)
+    }
+}
+
+fn append_path_suffix(base_path: &Path, suffix: &str) -> PathBuf {
+    if suffix.is_empty() {
+        return base_path.to_path_buf();
+    }
+
+    let file_name = base_path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| "worktree".to_string());
+    base_path
+        .parent()
+        .unwrap_or(base_path)
+        .join(format!("{file_name}{suffix}"))
 }

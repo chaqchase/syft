@@ -6,6 +6,7 @@ use syft_store::MetadataStore;
 use syft_types::{
     ChangeDetail, ChangeHeadline, ChangeListEntry, ChangeNodeStatus, HistoryEntry, HistoryQuery,
     PromotionHeadline, RepoStatusSummary, SnapshotDetail, SnapshotListEntry, Task,
+    WorktreeHeadline,
 };
 
 use crate::app::SyftApp;
@@ -21,6 +22,7 @@ impl QueryService for SyftApp {
             .metadata_store
             .list_change_nodes(&self.repo_config.repo_id, None)?;
         let promotions = self.metadata_store.list_promotions(&self.repo_config.repo_id)?;
+        let worktree_map = self.worktree_map()?;
 
         let mut task_counts = BTreeMap::new();
         for task in &tasks {
@@ -51,6 +53,11 @@ impl QueryService for SyftApp {
                     status: change.status.clone(),
                     task_id: Some(change.task_id.clone()),
                     task_title: task_map.get(&change.task_id).map(|task| task.title.clone()),
+                    worktree_name: change
+                        .worktree_id
+                        .as_ref()
+                        .and_then(|id| worktree_map.get(id))
+                        .map(|worktree| worktree.name.clone()),
                     validation_summary: Some(artifact.summary),
                     validation_status: Some(artifact.status),
                     risk_score: change.risk.score,
@@ -74,6 +81,13 @@ impl QueryService for SyftApp {
             repo_name: repo.name,
             repo_id: repo.id,
             current_head_snapshot_id: self.current_head_snapshot_id()?,
+            current_worktree: self.current_worktree.as_ref().map(|worktree| WorktreeHeadline {
+                id: worktree.id.clone(),
+                name: worktree.name.clone(),
+                path: worktree.path.clone(),
+                branch: worktree.branch.clone(),
+                task_id: worktree.task_id.clone(),
+            }),
             latest_snapshot_at: snapshots.iter().map(|snapshot| snapshot.created_at).max(),
             task_counts,
             change_counts,
@@ -88,6 +102,7 @@ impl QueryService for SyftApp {
             .metadata_store
             .list_change_nodes(&self.repo_config.repo_id, None)?;
         let task_map = self.task_map()?;
+        let worktree_map = self.worktree_map()?;
 
         let mut entries = Vec::new();
         for change in changes {
@@ -116,6 +131,11 @@ impl QueryService for SyftApp {
                 title: change.title.clone(),
                 task_id: change.task_id.clone(),
                 task_title,
+                worktree_name: change
+                    .worktree_id
+                    .as_ref()
+                    .and_then(|id| worktree_map.get(id))
+                    .map(|worktree| worktree.name.clone()),
                 intent: change.intent.clone(),
                 changed_file_count: change.semantic_delta.changed_files.len(),
                 touched_symbols: symbol_names,
@@ -145,11 +165,12 @@ impl QueryService for SyftApp {
             .metadata_store
             .list_change_nodes(&self.repo_config.repo_id, None)?;
         let task_map = self.task_map()?;
+        let worktree_map = self.worktree_map()?;
 
         changes
             .into_iter()
             .filter(|change| change.task_id == task.id)
-            .map(|change| self.change_list_entry(change, &task_map))
+            .map(|change| self.change_list_entry(change, &task_map, &worktree_map))
             .collect()
     }
 
@@ -178,6 +199,7 @@ impl QueryService for SyftApp {
     }
 
     fn list_snapshots(&self) -> Result<Vec<SnapshotListEntry>> {
+        let worktree_map = self.worktree_map()?;
         Ok(self
             .metadata_store
             .list_snapshots(&self.repo_config.repo_id)?
@@ -191,6 +213,12 @@ impl QueryService for SyftApp {
                 } else {
                     snapshot.metadata.labels.join(", ")
                 },
+                worktree_name: snapshot
+                    .metadata
+                    .worktree_id
+                    .as_ref()
+                    .and_then(|id| worktree_map.get(id))
+                    .map(|worktree| worktree.name.clone()),
                 created_at: snapshot.created_at,
                 parent_count: snapshot.parent_snapshot_ids.len(),
             })
@@ -199,6 +227,7 @@ impl QueryService for SyftApp {
 
     fn show_snapshot(&self, snapshot_id: &str) -> Result<SnapshotDetail> {
         let snapshot = self.get_snapshot(snapshot_id)?;
+        let worktree_map = self.worktree_map()?;
         let changed_file_count_from_parent =
             if let Some(parent_id) = snapshot.parent_snapshot_ids.first() {
                 let parent = self.get_snapshot(parent_id)?;
@@ -211,6 +240,12 @@ impl QueryService for SyftApp {
 
         Ok(SnapshotDetail {
             source: snapshot_source_summary(&snapshot.metadata.source),
+            worktree_name: snapshot
+                .metadata
+                .worktree_id
+                .as_ref()
+                .and_then(|id| worktree_map.get(id))
+                .map(|worktree| worktree.name.clone()),
             snapshot,
             changed_file_count_from_parent,
         })
@@ -230,22 +265,28 @@ impl QueryService for SyftApp {
             .metadata_store
             .list_change_nodes(&self.repo_config.repo_id, None)?;
         let task_map = self.task_map()?;
+        let worktree_map = self.worktree_map()?;
 
         changes
             .into_iter()
-            .map(|change| self.change_list_entry(change, &task_map))
+            .map(|change| self.change_list_entry(change, &task_map, &worktree_map))
             .collect()
     }
 
     fn show_change(&self, node_id: &str, include_logs: bool) -> Result<ChangeDetail> {
         let node = self.get_change_node(node_id)?;
         let task = self.metadata_store.get_task(&node.task_id)?;
+        let worktree = match node.worktree_id.as_deref() {
+            Some(worktree_id) => self.metadata_store.get_worktree(worktree_id)?,
+            None => None,
+        };
         let validations = self.validation_records_for_node(node_id, include_logs)?;
         let promotions = self.metadata_store.list_promotions_for_node(node_id)?;
 
         Ok(ChangeDetail {
             node,
             task,
+            worktree,
             validations,
             promotions,
         })

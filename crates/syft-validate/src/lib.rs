@@ -189,6 +189,7 @@ mod tests {
                 repo_id: "repo".to_string(),
                 source,
                 labels: Vec::new(),
+                worktree_id: None,
             },
         }
     }

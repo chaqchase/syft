@@ -160,7 +160,7 @@ pub(crate) fn load_capture_rules(path: PathBuf) -> Result<Vec<String>> {
         .collect())
 }
 
-fn shorten_id(value: &str) -> String {
+pub(crate) fn shorten_id(value: &str) -> String {
     value.chars().take(8).collect()
 }
 
@@ -201,4 +201,22 @@ pub(crate) fn diff_summary(
         ops,
         counts,
     }
+}
+
+pub(crate) fn slugify(value: &str) -> String {
+    let mut out = String::new();
+    let mut last_dash = false;
+
+    for ch in value.chars() {
+        let normalized = ch.to_ascii_lowercase();
+        if normalized.is_ascii_alphanumeric() {
+            out.push(normalized);
+            last_dash = false;
+        } else if !last_dash && !out.is_empty() {
+            out.push('-');
+            last_dash = true;
+        }
+    }
+
+    out.trim_matches('-').to_string()
 }

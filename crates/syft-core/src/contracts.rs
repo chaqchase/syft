@@ -3,8 +3,8 @@ use std::path::Path;
 use anyhow::Result;
 use syft_types::{
     ChangeDetail, ChangeListEntry, ChangeNode, DiffSummary, HistoryEntry, HistoryQuery,
-    PromotionRecord, RepoStatusSummary, Snapshot, SnapshotDetail, SnapshotListEntry, Task,
-    TaskPriority, ValidationPlan,
+    ManagedWorktree, PromotionRecord, RepoStatusSummary, Snapshot, SnapshotDetail,
+    SnapshotListEntry, Task, TaskPriority, ValidationPlan, WorktreeDetail,
 };
 
 #[derive(Debug, Clone)]
@@ -38,6 +38,14 @@ pub struct PromoteChangeInput {
     pub export_to_git: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct WorktreeCreateInput {
+    pub task_id: Option<String>,
+    pub name: Option<String>,
+    pub source_ref: String,
+    pub path: Option<String>,
+}
+
 pub trait RepoService {
     fn import_git_commit(&self, commit: &str) -> Result<Snapshot>;
     fn capture_snapshot(&self) -> Result<Snapshot>;
@@ -56,6 +64,14 @@ pub trait ChangeService {
     fn propose_change(&self, input: ProposeChangeInput) -> Result<ChangeNode>;
     fn validate_change(&self, node_id: &str, plan: &ValidationPlan) -> Result<ChangeNode>;
     fn promote_change(&self, input: PromoteChangeInput) -> Result<PromotionRecord>;
+}
+
+pub trait WorktreeService {
+    fn create_worktree(&self, input: WorktreeCreateInput) -> Result<ManagedWorktree>;
+    fn list_worktrees(&self) -> Result<Vec<ManagedWorktree>>;
+    fn show_worktree(&self, id_or_name: &str) -> Result<WorktreeDetail>;
+    fn current_worktree(&self) -> Result<Option<ManagedWorktree>>;
+    fn remove_worktree(&self, id_or_name: &str, force: bool) -> Result<ManagedWorktree>;
 }
 
 pub trait QueryService {

@@ -39,6 +39,8 @@ pub struct SnapshotMetadata {
     pub repo_id: EntityId,
     pub source: SnapshotSource,
     pub labels: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_id: Option<EntityId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -48,4 +50,25 @@ pub enum SnapshotSource {
     MaterializedByHuman,
     MaterializedByAgent,
     MaterializedByCompose,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManagedWorktree {
+    pub id: EntityId,
+    pub repo_id: EntityId,
+    pub task_id: EntityId,
+    pub name: String,
+    pub branch: String,
+    pub path: String,
+    pub source_ref: String,
+    pub status: ManagedWorktreeStatus,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub enum ManagedWorktreeStatus {
+    #[default]
+    Active,
+    Removed,
 }
