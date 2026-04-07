@@ -6,6 +6,40 @@ The shape is simple on purpose.
 
 This version is trying to prove the model with as little machinery as possible. That keeps it easier to read and easier to debug when the model changes.
 
+```mermaid
+flowchart LR
+    cli["syft-cli"]
+    core["syft-core"]
+    git["syft-git"]
+    objects["syft-objects"]
+    semantic["syft-semantic"]
+    validate["syft-validate"]
+    store["syft-store"]
+    types["syft-types"]
+
+    cli --> core
+    cli --> types
+    core --> git
+    core --> objects
+    core --> semantic
+    core --> validate
+    core --> store
+    core --> types
+    git --> objects
+    git --> store
+    git --> types
+    objects --> store
+    objects --> types
+    semantic --> objects
+    semantic --> store
+    semantic --> types
+    validate --> git
+    validate --> objects
+    validate --> store
+    validate --> types
+    store --> types
+```
+
 ## Workspace layout
 
 The current workspace members are:
@@ -127,6 +161,24 @@ A typical command goes like this:
 3. the requested action runs
 4. records are written to SQLite and objects are written to `.syft/objects`
 5. the CLI prints text or JSON
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant CLI as syft-cli
+    participant Core as SyftApp
+    participant Meta as SQLite metadata
+    participant Obj as object store
+    participant Git as git bridge
+
+    User->>CLI: run command
+    CLI->>Core: open repo and dispatch
+    Core->>Meta: load or write records
+    Core->>Obj: load or write objects
+    Core->>Git: import/export/materialize when needed
+    Core-->>CLI: result model
+    CLI-->>User: text or JSON output
+```
 
 That is it.
 

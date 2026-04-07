@@ -6,6 +6,24 @@ The root [`README.md`](/Users/mohamedachaq/rework/cronacl-saas/git-alrt/syft/REA
 
 This folder is the practical part. It is about how the current build works, where things live, and what the CLI actually does today.
 
+```mermaid
+flowchart TD
+    readme["README.md<br/>why this exists"]
+    docs["docs/"]
+    arch["architecture.md"]
+    storage["storage.md"]
+    cli["cli.md"]
+    dev["development.md"]
+    release["releasing.md"]
+
+    readme --> docs
+    docs --> arch
+    docs --> storage
+    docs --> cli
+    docs --> dev
+    docs --> release
+```
+
 Start here:
 
 - [`architecture.md`](/Users/mohamedachaq/rework/cronacl-saas/git-alrt/syft/docs/architecture.md) for the workspace layout and how the crates fit together

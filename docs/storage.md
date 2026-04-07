@@ -6,6 +6,30 @@ Everything `syft` needs lives under `.syft/` inside the Git repo.
 
 That sounds simple because it is simple. Right now that is a good thing.
 
+```mermaid
+flowchart TD
+    repo["repo root"]
+    syft[".syft/"]
+    repo_toml["repo.toml"]
+    objects["objects/"]
+    state["state/"]
+    cache["cache/"]
+    index["index/"]
+    db["metadata.db"]
+    head["head"]
+    current["current_task"]
+
+    repo --> syft
+    syft --> repo_toml
+    syft --> objects
+    syft --> state
+    syft --> cache
+    syft --> index
+    state --> db
+    state --> head
+    state --> current
+```
+
 ## Control directory layout
 
 This is the layout today:
@@ -130,6 +154,17 @@ Typical examples:
 
 These are the main records in the system today.
 
+```mermaid
+erDiagram
+    REPO ||--o{ SNAPSHOT : has
+    REPO ||--o{ TASK : has
+    REPO ||--o{ CHANGE_NODE : has
+    TASK ||--o{ CHANGE_NODE : scopes
+    SNAPSHOT ||--o{ CHANGE_NODE : base_or_result
+    CHANGE_NODE ||--o{ VALIDATION_ARTIFACT : records
+    CHANGE_NODE ||--o{ PROMOTION_RECORD : promotes
+```
+
 ### `Repo`
 
 One logical `syft` repo.
@@ -223,6 +258,16 @@ They drive:
 - parts of `change show`
 
 This is not a unified patch view yet. It is a stable, structured summary of add, modify, delete, and rename operations.
+
+```mermaid
+flowchart LR
+    base["Base snapshot index"] --> diff["Patch op diff"]
+    result["Result snapshot index"] --> diff
+    diff --> add["Add"]
+    diff --> modify["Modify"]
+    diff --> delete["Delete"]
+    diff --> rename["Rename"]
+```
 
 ### Semantic delta
 

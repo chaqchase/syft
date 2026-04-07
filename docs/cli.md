@@ -4,6 +4,17 @@ The CLI is the only user interface right now.
 
 Every command also supports `--json` at the top level if you want machine-readable output.
 
+```mermaid
+flowchart LR
+    init["init"] --> import["repo import-git"]
+    import --> task["task create / set-current"]
+    task --> capture["snapshot capture"]
+    capture --> propose["change propose"]
+    propose --> inspect["status / history / show / diff"]
+    inspect --> validate["change validate"]
+    validate --> promote["change promote"]
+```
+
 ## Basic repo flow
 
 This is the normal bootstrap path:
@@ -20,6 +31,45 @@ syft change promote <change-id> --to main
 ```
 
 That is the whole system in a small loop.
+
+## Command map
+
+```mermaid
+flowchart TD
+    syft["syft"]
+    repo["repo"]
+    snapshot["snapshot"]
+    task["task"]
+    change["change"]
+    status["status"]
+    history["history"]
+
+    syft --> repo
+    syft --> snapshot
+    syft --> task
+    syft --> change
+    syft --> status
+    syft --> history
+
+    repo --> import["import-git"]
+    snapshot --> capture["capture"]
+    snapshot --> list_snap["list"]
+    snapshot --> show_snap["show"]
+    snapshot --> diff_snap["diff"]
+    task --> create_task["create"]
+    task --> list_task["list"]
+    task --> show_task["show"]
+    task --> current_task["current"]
+    task --> set_current["set-current"]
+    task --> task_changes["changes"]
+    change --> propose["propose"]
+    change --> list_change["list"]
+    change --> show_change["show"]
+    change --> latest["latest"]
+    change --> diff_change["diff"]
+    change --> validate_change["validate"]
+    change --> promote_change["promote"]
+```
 
 ## Command groups
 
@@ -197,6 +247,15 @@ Supported flags:
 These map to local cargo commands run against a materialized snapshot.
 
 Validation runs in a clean temp build directory and clears excluded paths out of the materialized tree first. That keeps stale generated output from making a broken change look healthy.
+
+```mermaid
+flowchart LR
+    snapshot["result snapshot"] --> materialize["materialize temp tree"]
+    materialize --> cleanup["remove excluded paths"]
+    cleanup --> cargo["cargo check / test / clippy"]
+    cargo --> artifact["ValidationArtifact"]
+    cargo --> logs["ValidationDetails stdout/stderr"]
+```
 
 ### `syft change promote <change-id> --to <lineage>`
 

@@ -6,6 +6,16 @@ There are two release paths now.
 - GitHub releases for the `syft` binary
 - semantic versioning driven by conventional commits
 
+```mermaid
+flowchart LR
+    commits["conventional commits on main"] --> semrel["semantic-release"]
+    semrel --> tag["version bump + vX.Y.Z tag"]
+    semrel --> ghrel["GitHub release"]
+    ghrel --> binaries["build Linux / macOS / Windows binaries"]
+    ghrel --> crates["publish crates.io packages"]
+    binaries --> install["install scripts download release assets"]
+```
+
 The GitHub Actions setup lives in:
 
 - `.github/workflows/ci.yml`
@@ -32,6 +42,23 @@ It does four things:
    - Windows x86_64
 3. Publishes a GitHub release with archives and a `SHA256SUMS.txt` file.
 4. Publishes the crates to crates.io in dependency order.
+
+```mermaid
+sequenceDiagram
+    participant Dev as maintainer
+    participant Main as main branch
+    participant SR as semantic-release
+    participant GH as GitHub Release workflow
+    participant CR as crates.io
+
+    Dev->>Main: merge conventional commits
+    Main->>SR: semantic-release workflow runs
+    SR->>SR: bump version and changelog
+    SR->>GH: create tag and GitHub release
+    GH->>GH: build platform binaries
+    GH->>GH: upload archives and checksums
+    GH->>CR: publish crates in order
+```
 
 ## Commit format
 

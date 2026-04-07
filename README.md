@@ -26,6 +26,24 @@ A change node ties together:
 
 That gives you a better unit for AI-assisted work than a commit by itself.
 
+```mermaid
+flowchart LR
+    task["Task"]
+    base["Base Snapshot"]
+    result["Result Snapshot"]
+    change["ChangeNode"]
+    semantic["Semantic Delta"]
+    validation["Validation Artifacts"]
+    promotion["Promotion Record"]
+
+    task --> change
+    base --> change
+    result --> change
+    change --> semantic
+    change --> validation
+    change --> promotion
+```
+
 Commits still matter. Diffs still matter. Git still matters. They just are not enough on their own once you have multiple attempts and tool-driven changes flying around.
 
 ## Why build this at all
@@ -77,6 +95,17 @@ The current workspace supports this flow:
 5. propose a change node against a base snapshot
 6. run validation on that result snapshot
 7. promote the change and optionally export it back to Git
+
+```mermaid
+flowchart LR
+    init["syft init"] --> import["repo import-git"]
+    import --> task["task create"]
+    task --> capture["snapshot capture"]
+    capture --> propose["change propose"]
+    propose --> validate["change validate"]
+    validate --> promote["change promote"]
+    promote --> git["optional Git export"]
+```
 
 It also has the read-side commands you need to inspect the state of the repo:
 
