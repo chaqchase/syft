@@ -1,10 +1,15 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types:
+      - published
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and publish
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -22,21 +27,35 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
 
     steps:
       - name: Check out
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Resolve release tag
+        id: release
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Read crate version
         id: version
         run: |
+          TAG="${{ steps.release.outputs.tag }}"
           VERSION=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; data=json.load(sys.stdin); print(next(pkg["version"] for pkg in data["packages"] if pkg["name"] == "syft-cli"))')
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          if [ "${GITHUB_REF_NAME}" != "v${VERSION}" ]; then
-            echo "Tag ${GITHUB_REF_NAME} does not match workspace version v${VERSION}" >&2
+          if [ "$TAG" != "v${VERSION}" ]; then
+            echo "Tag $TAG does not match workspace version v${VERSION}" >&2
             exit 1
           fi
 
@@ -68,6 +87,8 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify-version.outputs.tag }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -113,8 +134,8 @@ jobs:
           name: binary-${{ matrix.target }}
           path: dist/*
 
-  github-release:
-    name: Publish GitHub Release
+  upload-release-assets:
+    name: Upload Release Assets
     needs:
       - verify-version
       - build-binaries
@@ -132,27 +153,30 @@ jobs:
           cd dist
           shasum -a 256 *.tar.gz *.zip > SHA256SUMS.txt
 
-      - name: Create release
+      - name: Upload assets to release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.verify-version.outputs.tag }}
           files: |
             dist/*.tar.gz
             dist/*.zip
             dist/SHA256SUMS.txt
-          generate_release_notes: true
 
   publish-crates:
     name: Publish Crates.io Packages
     needs:
       - verify-version
-      - github-release
+      - upload-release-assets
     runs-on: ubuntu-latest
-    if: ${{ secrets.CARGO_REGISTRY_TOKEN != '' }}
     environment: crates-io
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
     steps:
       - name: Check out
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify-version.outputs.tag }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -160,9 +184,14 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
+      - name: Skip publish when token is missing
+        if: env.CARGO_REGISTRY_TOKEN == ''
+        run: echo "CARGO_REGISTRY_TOKEN is not set, skipping crates.io publish"
+
       - name: Publish workspace crates
+        if: env.CARGO_REGISTRY_TOKEN != ''
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ env.CARGO_REGISTRY_TOKEN }}
         run: |
           set -euo pipefail
           publish() {
